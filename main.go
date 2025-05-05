@@ -162,15 +162,22 @@ func writeCodeContent(dirPath string, ignoreList, includeList []*regexp.Regexp, 
 			return err
 		}
 
-		// Check if the file should be processed
 		relPath, _ := filepath.Rel(".", path)
+		if relPath == "." { // Skip processing the root directory entry itself directly
+			return nil
+		}
+
+		// Check if the file/directory should be processed
 		if !shouldProcess(relPath, ignoreList, includeList) {
 			if excludedPathsFile == "" {
 				fmt.Println(Red + "- " + path + Reset)
 			} else {
 				excludedPaths = append(excludedPaths, path)
 			}
-			return nil
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil // If it's a file, just skip this file and continue
 		}
 
 		if includedPathsFile == "" {
