@@ -11,9 +11,9 @@ builds:
       - darwin
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
+      - -X github.com/tesserato/CodeWeaver.version={{.Version}}
+      - -X github.com/tesserato/CodeWeaver.commit={{.Commit}}
+      - -X github.com/tesserato/CodeWeaver.date={{.Date}}
 
 archives:
   - formats: [tar.gz]
