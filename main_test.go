@@ -813,18 +813,6 @@ func TestMainExecutionFlows(t *testing.T) {
 	baseInputDir, cleanupInput := createTestFS(t)
 	defer cleanupInput()
 
-	t.Run("VersionFlag", func(t *testing.T) {
-		testOutputDir := t.TempDir()
-		logOutput, err := runMainLogic([]string{"-version"}, testOutputDir)
-		if err != nil {
-			t.Fatalf("runMainLogic with -version failed: %v", err)
-		}
-		expected := fmt.Sprintf("CodeWeaver version %s", version)
-		if !strings.Contains(logOutput, expected) {
-			t.Errorf("Expected '%s' in output, got:\n%s", expected, logOutput)
-		}
-	})
-
 	t.Run("HelpFlag", func(t *testing.T) {
 		testOutputDir := t.TempDir()
 		logOutput, err := runMainLogic([]string{"-help"}, testOutputDir)

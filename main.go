@@ -40,13 +40,6 @@ const (
 	logPrefixInclude = "+"
 )
 
-// --- Build-time Variables ---
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
-)
-
 // --- Main Execution ---
 func main() {
 
@@ -70,12 +63,6 @@ func main() {
 			os.Exit(0) // Exit successfully after showing help
 		}
 	}
-	// Handle flags that exit immediately
-	if cfg.showVersion {
-		fmt.Printf("CodeWeaver version %s\ncommit %s\nbuilt at %s\n", version, commit, date)
-		os.Exit(0)
-	}
-	// -help is handled by flag.Usage, which calls printHelp and exits(0).
 
 	// 2. Setup Logger
 	logger := setupLogging(cfg)
@@ -534,7 +521,6 @@ func savePathsToFile(filename string, paths []string, logger *log.Logger) error 
 func printHelp() {
 	// Use os.Stderr for help message output
 	fmt.Fprintf(os.Stderr, "CodeWeaver: Generate Markdown Documentation from Your Codebase.\n")
-	fmt.Fprintf(os.Stderr, "Version: %s, Commit: %s, Date: %s\n\n", version, commit, date)
 	fmt.Fprintf(os.Stderr, "Usage: codeweaver [options]\n")
 	fmt.Fprintf(os.Stderr, "\nOptions:\n")
 	flag.PrintDefaults() // This will now print the flags defined globally
