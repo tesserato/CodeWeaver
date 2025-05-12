@@ -379,9 +379,9 @@ func (cb *contentBuilder) buildContentString() (string, []string, []string, erro
 				cb.logger.Printf("%s- %s%s\n", colorRed, pathRelToInput, colorReset)
 			}
 			excludedPaths = append(excludedPaths, pathRelToInput) // Store relative path
-			if d.IsDir() {
-				return filepath.SkipDir // Skip entire directory
-			}
+			// if d.IsDir() {
+			// 	return filepath.SkipDir // Skip entire directory
+			// }
 			return nil // Skip this file
 		}
 
