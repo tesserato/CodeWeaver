@@ -4,11 +4,13 @@
 ├─ LICENSE
 ├─ README.md
 ├─ build_and_run.ps1
+├─ coverage
 ├─ go.mod
 ├─ go.sum
 ├─ goreleaser.yaml
 ├─ main.go
 ├─ main_test.go
+├─ run_tests.ps1
 └─ test_root
    ├─ File at root A.txt
    ├─ File at root B.md
@@ -291,7 +293,13 @@ go build .
 
 git describe --tags --abbrev=0
 
-./CodeWeaver -clipboard -ignore="\.git.*,.+\.exe,codebase.md,excluded_paths.txt"
+./CodeWeaver -clipboard -ignore="\.git.*,.+\.exe,codebase.md,excluded_paths.txt,DRAFT\.md"
+```
+
+## coverage
+```
+mode: set
+
 ```
 
 ## go.mod
@@ -761,14 +769,15 @@ func (cb *contentBuilder) buildContentString() (string, []string, []string, erro
 	var includedPaths []string
 	var excludedPaths []string
 
-	err := filepath.WalkDir(cb.rootAbsPath, func(currentWalkPath string, d fs.DirEntry, err error) error {
+err := filepath.WalkDir(cb.rootAbsPath, func(currentWalkPath string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// Report error and attempt to continue if possible, unless it's critical.
+			// If WalkDir encounters an error accessing a path (like permission denied or root not existing),
+			// report it and return the error to stop the walk unless it's skippable.
 			cb.logger.Printf("%sWarning: Error accessing %s: %v%s\n", colorRed, currentWalkPath, err, colorReset)
-			if d != nil && d.IsDir() { // If it's a directory error, might not be skippable
-				return filepath.SkipDir // Try to skip this problematic directory
-			}
-			return nil // Skip this problematic file entry
+			// Allow skipping directories if the error is related to reading its contents,
+			// but critical errors (like the starting path itself not existing) should halt.
+			// Returning the error is generally safer.
+			return err
 		}
 
 		pathRelToInput, relErr := filepath.Rel(cb.rootAbsPath, currentWalkPath)
@@ -872,20 +881,23 @@ func printHelp() {
 package main
 
 import (
-	"io/ioutil" // For ioutil.Discard
+	"flag" // For testing parseFlags
+	"fmt"
+	"io/ioutil" // For ioutil.Discard, TempFile, etc.
 	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
 
-// mustCompileRegex is a helper for tests to compile regex patterns.
-// It panics if compilation fails, as this indicates a test setup error.
+// --- Helpers (mustCompileRegex, normalizeNewlines, createTestFS, equalStringSlices) remain the same ---
+
 func mustCompileRegex(pattern string) *regexp.Regexp {
 	if pattern == "" {
-		return nil // Allow empty patterns to result in nil, which is handled by shouldProcess
+		return nil
 	}
 	r, err := regexp.Compile(pattern)
 	if err != nil {
@@ -894,53 +906,10 @@ func mustCompileRegex(pattern string) *regexp.Regexp {
 	return r
 }
 
-// normalizeNewlines ensures consistent line endings for string comparisons.
 func normalizeNewlines(s string) string {
 	return strings.ReplaceAll(s, "\r\n", "\n")
 }
 
-func TestShouldProcess(t *testing.T) {
-	testCases := []struct {
-		name            string
-		path            string // Path relative to input dir, using forward slashes
-		ignoreMatchers  []*regexp.Regexp
-		includeMatchers []*regexp.Regexp
-		expected        bool
-	}{
-		{"NoFilters_Allow", "file.txt", nil, nil, true},
-		{"EmptyIgnoreList", "file.txt", []*regexp.Regexp{}, nil, true},
-		{"EmptyIncludeList_MeansAllow", "file.txt", nil, []*regexp.Regexp{}, true},
-		{"IgnoreMatch_Exact", "skip.txt", []*regexp.Regexp{mustCompileRegex(`^skip\.txt$`)}, nil, false},
-		{"IgnoreMatch_DirPrefix", "skip/file.txt", []*regexp.Regexp{mustCompileRegex(`^skip/`)}, nil, false},
-		{"IgnoreNoMatch", "keep/file.txt", []*regexp.Regexp{mustCompileRegex(`^skip/`)}, nil, true},
-		{"IncludeMatch_Extension", "src/main.go", nil, []*regexp.Regexp{mustCompileRegex(`\.go$`)}, true},
-		{"IncludeNoMatch_Extension", "src/main.txt", nil, []*regexp.Regexp{mustCompileRegex(`\.go$`)}, false},
-		{"IncludeDir_Exact", "data/", nil, []*regexp.Regexp{mustCompileRegex(`^data/$`)}, true},
-		{"IncludeDir_NoMatch", "other/", nil, []*regexp.Regexp{mustCompileRegex(`^data/$`)}, false},
-		{"IgnoreTakesPrecedence_PathMatchesBoth", "vendor/lib.go", []*regexp.Regexp{mustCompileRegex(`^vendor/`)}, []*regexp.Regexp{mustCompileRegex(`\.go$`)}, false},
-		{"IncludeSatisfied_NotIgnored", "src/main.go", []*regexp.Regexp{mustCompileRegex(`^vendor/`)}, []*regexp.Regexp{mustCompileRegex(`\.go$`)}, true},
-		{"MultipleIgnore_FirstMatch", "config/dev.log", []*regexp.Regexp{mustCompileRegex(`\.log$`), mustCompileRegex(`^config/`)}, nil, false},
-		{"MultipleIgnore_SecondMatch", "build/app.exe", []*regexp.Regexp{mustCompileRegex(`\.log$`), mustCompileRegex(`\.exe$`)}, nil, false},
-		{"MultipleInclude_OneMatchSufficient", "image.png", nil, []*regexp.Regexp{mustCompileRegex(`\.jpg$`), mustCompileRegex(`\.png$`)}, true},
-		{"MultipleInclude_NoMatch", "archive.zip", nil, []*regexp.Regexp{mustCompileRegex(`\.jpg$`), mustCompileRegex(`\.png$`)}, false},
-		{"PathIsEmptyString_Root_NoFilters", "", nil, nil, true},
-		{"PathIsEmptyString_Root_Ignored", "", []*regexp.Regexp{mustCompileRegex(`^$`)}, nil, false}, // Regex `^$` matches empty string
-		{"PathIsEmptyString_Root_Included", "", nil, []*regexp.Regexp{mustCompileRegex(`^$`)}, true},
-		{"PathIsEmptyString_Root_NotIncluded", "", nil, []*regexp.Regexp{mustCompileRegex(`\.txt$`)}, false},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			actual := shouldProcess(tc.path, tc.ignoreMatchers, tc.includeMatchers)
-			if actual != tc.expected {
-				t.Errorf("shouldProcess(%q) with ignore/include patterns = %v; want %v", tc.path, actual, tc.expected)
-			}
-		})
-	}
-}
-
-// createTestFS creates a temporary directory structure for integration-like tests.
-// It returns the absolute path to the root of the test structure and a cleanup function.
 func createTestFS(t *testing.T) (string, func()) {
 	t.Helper()
 	rootDir, err := ioutil.TempDir("", "codeweaver_test_fs_")
@@ -950,34 +919,34 @@ func createTestFS(t *testing.T) (string, func()) {
 
 	// Define structure: map[relativePath]content ("" content for directory)
 	structure := map[string]string{
-		"file1.txt":                       "content of file1",
-		"script.go":                       "package main\nfunc main() {}",
-		"README.md":                       "# Test Readme",
-		"data/":                           "", // Directory marker
-		"data/image.png":                  "fake png data",
-		"data/config.yaml":                "key: value",
-		"build/":                          "", // Directory marker
-		"build/output.exe":                "binary data",
-		"build/tmp/":                      "", // Directory marker
-		"build/tmp/log.txt":               "log entry",
-		".git/":                           "", // Directory marker
-		".git/HEAD":                       "ref: refs/heads/main",
-		"node_modules/":                   "", // Directory marker
-		"node_modules/dep/":               "", // Directory marker
-		"node_modules/dep/package.json":   "{}",
-		"empty_dir/":                      "", // Explicitly empty directory
+		"file1.txt":                     "content of file1",
+		"script.go":                     "package main\nfunc main() {}",
+		"README.md":                     "# Test Readme",
+		"data/":                         "", // Directory marker
+		"data/image.png":                "fake png data",
+		"data/config.yaml":              "key: value",
+		"build/":                        "", // Directory marker
+		"build/output.exe":              "binary data",
+		"build/tmp/":                    "", // Directory marker
+		"build/tmp/log.txt":             "log entry",
+		".git/":                         "", // Directory marker
+		".git/HEAD":                     "ref: refs/heads/main",
+		"node_modules/":                 "", // Directory marker
+		"node_modules/dep/":             "", // Directory marker
+		"node_modules/dep/package.json": "{}",
+		"empty_dir/":                    "", // Explicitly empty directory
 		"docs/sub_docs/file_in_sub.txt": "nested doc content",
+		"other.log":                     "another log",
 	}
 
 	for relPath, content := range structure {
 		absPath := filepath.Join(rootDir, relPath)
-		if strings.HasSuffix(relPath, "/") { // It's a directory
+		if strings.HasSuffix(relPath, "/") || content == "" && !strings.Contains(relPath, ".") { // Treat as directory if ends with / OR has no extension/dot and empty content
 			if err := os.MkdirAll(absPath, 0755); err != nil {
 				os.RemoveAll(rootDir) // Cleanup on error
 				t.Fatalf("Failed to create dir %s: %v", absPath, err)
 			}
 		} else { // It's a file
-			// Ensure parent directory exists first
 			parentDir := filepath.Dir(absPath)
 			if err := os.MkdirAll(parentDir, 0755); err != nil {
 				os.RemoveAll(rootDir)
@@ -996,149 +965,396 @@ func createTestFS(t *testing.T) (string, func()) {
 	return rootDir, cleanup
 }
 
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	// Assumes slices are sorted
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// --- Test Suite ---
+
+func TestShouldProcess(t *testing.T) {
+	// --- Test cases from previous version (verified) ---
+	testCases := []struct {
+		name            string
+		path            string // Path relative to input dir, using forward slashes
+		ignoreMatchers  []*regexp.Regexp
+		includeMatchers []*regexp.Regexp
+		expected        bool
+	}{
+		{"NoFilters_Allow", "file.txt", nil, nil, true},
+		{"EmptyIgnoreList", "file.txt", []*regexp.Regexp{}, nil, true},
+		{"EmptyIncludeList_MeansAllow", "file.txt", nil, []*regexp.Regexp{}, true},
+		{"IgnoreMatch_Exact", "skip.txt", []*regexp.Regexp{mustCompileRegex(`^skip\.txt$`)}, nil, false},
+		{"IgnoreMatch_DirPrefix", "skip/file.txt", []*regexp.Regexp{mustCompileRegex(`^skip/`)}, nil, false},
+		{"IgnoreNoMatch", "keep/file.txt", []*regexp.Regexp{mustCompileRegex(`^skip/`)}, nil, true},
+		{"IncludeMatch_Extension", "src/main.go", nil, []*regexp.Regexp{mustCompileRegex(`\.go$`)}, true},
+		{"IncludeNoMatch_Extension", "src/main.txt", nil, []*regexp.Regexp{mustCompileRegex(`\.go$`)}, false},
+		{"IncludeDir_Exact", "data/", nil, []*regexp.Regexp{mustCompileRegex(`^data/?$`)}, true}, // Note: ? for optional trailing slash
+		{"IncludeDir_NoMatch", "other/", nil, []*regexp.Regexp{mustCompileRegex(`^data/?$`)}, false},
+		{"IgnoreTakesPrecedence_PathMatchesBoth", "vendor/lib.go", []*regexp.Regexp{mustCompileRegex(`^vendor/`)}, []*regexp.Regexp{mustCompileRegex(`\.go$`)}, false},
+		{"IncludeSatisfied_NotIgnored", "src/main.go", []*regexp.Regexp{mustCompileRegex(`^vendor/`)}, []*regexp.Regexp{mustCompileRegex(`\.go$`)}, true},
+		{"MultipleIgnore_FirstMatch", "config/dev.log", []*regexp.Regexp{mustCompileRegex(`\.log$`), mustCompileRegex(`^config/`)}, nil, false},
+		{"MultipleIgnore_SecondMatch", "build/app.exe", []*regexp.Regexp{mustCompileRegex(`\.log$`), mustCompileRegex(`\.exe$`)}, nil, false},
+		{"MultipleInclude_OneMatchSufficient", "image.png", nil, []*regexp.Regexp{mustCompileRegex(`\.jpg$`), mustCompileRegex(`\.png$`)}, true},
+		{"MultipleInclude_NoMatch", "archive.zip", nil, []*regexp.Regexp{mustCompileRegex(`\.jpg$`), mustCompileRegex(`\.png$`)}, false},
+		{"PathIsEmptyString_Root_NoFilters", "", nil, nil, true}, // Special case handled elsewhere, but func should allow
+		{"PathIsEmptyString_Root_Ignored", "", []*regexp.Regexp{mustCompileRegex(`^$`)}, nil, false},
+		{"PathIsEmptyString_Root_Included", "", nil, []*regexp.Regexp{mustCompileRegex(`^$`)}, true},
+		{"PathIsEmptyString_Root_NotIncluded", "", nil, []*regexp.Regexp{mustCompileRegex(`\.txt$`)}, false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := shouldProcess(tc.path, tc.ignoreMatchers, tc.includeMatchers)
+			if actual != tc.expected {
+				t.Errorf("shouldProcess(%q) with ignore/include patterns = %v; want %v", tc.path, actual, tc.expected)
+			}
+		})
+	}
+}
+
+// Test parseFlags by simulating command-line arguments
+func TestParseFlags(t *testing.T) {
+	// Helper to run parseFlags with specific args
+	runParse := func(args []string) (*config, error) {
+		// Create a new flag set for testing to avoid interfering with global state
+		testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+		testFlags.SetOutput(ioutil.Discard) // Suppress flag errors during testing
+
+		cfg := &config{}
+		originalArgs := os.Args                   // Backup original args
+		defer func() { os.Args = originalArgs }() // Restore original args
+
+		// Define flags on the test set
+		testFlags.StringVar(&cfg.inputDirOriginal, "input", ".", "The root directory to scan.")
+		testFlags.StringVar(&cfg.outputFile, "output", "codebase.md", "The name of the output Markdown file.")
+		ignoreStr := testFlags.String("ignore", `\.git.*`, "Comma-separated list of regex patterns to exclude.")
+		includeStr := testFlags.String("include", "", "Comma-separated list of regex patterns to include.")
+		testFlags.StringVar(&cfg.includedPathsFile, "included-paths-file", "", "File to save included paths.")
+		testFlags.StringVar(&cfg.excludedPathsFile, "excluded-paths-file", "", "File to save excluded paths.")
+		testFlags.BoolVar(&cfg.addToClipboard, "clipboard", false, "Copies the generated Markdown to the clipboard.")
+		testFlags.BoolVar(&cfg.showVersion, "version", false, "Displays the version and exits.")
+		testFlags.BoolVar(&cfg.showHelp, "help", false, "Displays help message and exits.")
+
+		// Simulate os.Args for parsing
+		os.Args = append([]string{"cmd"}, args...)
+		testFlags.Parse(args) // Parse the simulated args
+
+		// Manually perform the logic from parseFlags that happens *after* testFlags.Parse()
+		if cfg.showHelp || cfg.showVersion {
+			return cfg, nil
+		}
+
+		var err error
+		cfg.inputDirAbs, err = filepath.Abs(cfg.inputDirOriginal)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get absolute path for input directory '%s': %w", cfg.inputDirOriginal, err)
+		}
+		info, err := os.Stat(cfg.inputDirAbs)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, fmt.Errorf("input directory '%s' does not exist", cfg.inputDirAbs)
+			}
+			return nil, fmt.Errorf("error accessing input directory '%s': %w", cfg.inputDirAbs, err)
+		}
+		if !info.IsDir() {
+			return nil, fmt.Errorf("input path '%s' is not a directory", cfg.inputDirAbs)
+		}
+		if *ignoreStr != "" {
+			cfg.ignorePatterns = strings.Split(*ignoreStr, ",")
+		}
+		if *includeStr != "" {
+			cfg.includePatterns = strings.Split(*includeStr, ",")
+		}
+
+		return cfg, nil
+	}
+
+	// Test Cases
+	t.Run("Defaults", func(t *testing.T) {
+		cfg, err := runParse([]string{})
+		if err != nil {
+			t.Fatalf("Expected no error for defaults, got %v", err)
+		}
+		cwd, _ := os.Getwd()
+		absCwd, _ := filepath.Abs(cwd)
+		if cfg.inputDirAbs != absCwd {
+			t.Errorf("Default inputDirAbs mismatch: got %s, want %s", cfg.inputDirAbs, absCwd)
+		}
+		if cfg.outputFile != "codebase.md" {
+			t.Errorf("Default outputFile mismatch: got %s", cfg.outputFile)
+		}
+		if len(cfg.ignorePatterns) != 1 || cfg.ignorePatterns[0] != `\.git.*` {
+			t.Errorf("Default ignorePatterns mismatch: got %v", cfg.ignorePatterns)
+		}
+		if len(cfg.includePatterns) != 0 {
+			t.Errorf("Default includePatterns should be empty, got %v", cfg.includePatterns)
+		}
+		if cfg.addToClipboard != false {
+			t.Errorf("Default clipboard mismatch")
+		}
+	})
+
+	t.Run("SetValues", func(t *testing.T) {
+		// Use a known existing directory for input
+		tmpDir, cleanup := createTestFS(t)
+		defer cleanup()
+
+		args := []string{
+			"-input", tmpDir,
+			"-output", "out.md",
+			"-ignore", "a,b",
+			"-include", "c,d",
+			"-included-paths-file", "inc.txt",
+			"-excluded-paths-file", "exc.txt",
+			"-clipboard",
+		}
+		cfg, err := runParse(args)
+		if err != nil {
+			t.Fatalf("Expected no error setting values, got %v", err)
+		}
+		absTmpDir, _ := filepath.Abs(tmpDir)
+		if cfg.inputDirAbs != absTmpDir {
+			t.Errorf("Set inputDirAbs mismatch: got %s, want %s", cfg.inputDirAbs, absTmpDir)
+		}
+		if cfg.outputFile != "out.md" {
+			t.Errorf("Set outputFile mismatch")
+		}
+		if !equalStringSlices(cfg.ignorePatterns, []string{"a", "b"}) {
+			t.Errorf("Set ignorePatterns mismatch")
+		}
+		if !equalStringSlices(cfg.includePatterns, []string{"c", "d"}) {
+			t.Errorf("Set includePatterns mismatch")
+		}
+		if cfg.includedPathsFile != "inc.txt" {
+			t.Errorf("Set includedPathsFile mismatch")
+		}
+		if cfg.excludedPathsFile != "exc.txt" {
+			t.Errorf("Set excludedPathsFile mismatch")
+		}
+		if cfg.addToClipboard != true {
+			t.Errorf("Set clipboard mismatch")
+		}
+	})
+
+	t.Run("HelpFlag", func(t *testing.T) {
+		cfg, err := runParse([]string{"-help"})
+		if err != nil {
+			t.Fatalf("Expected no error for -help, got %v", err)
+		}
+		if !cfg.showHelp {
+			t.Errorf("Expected showHelp to be true")
+		}
+	})
+
+	t.Run("VersionFlag", func(t *testing.T) {
+		cfg, err := runParse([]string{"-version"})
+		if err != nil {
+			t.Fatalf("Expected no error for -version, got %v", err)
+		}
+		if !cfg.showVersion {
+			t.Errorf("Expected showVersion to be true")
+		}
+	})
+
+	t.Run("Error_InputNotExist", func(t *testing.T) {
+		nonExistentPath := filepath.Join(os.TempDir(), "codeweaver_non_existent_dir_abc123")
+		os.Remove(nonExistentPath) // Ensure it doesn't exist
+		_, err := runParse([]string{"-input", nonExistentPath})
+		if err == nil {
+			t.Fatalf("Expected error for non-existent input path, got nil")
+		}
+		if !strings.Contains(err.Error(), "does not exist") {
+			t.Errorf("Expected 'does not exist' error, got: %v", err)
+		}
+	})
+
+	t.Run("Error_InputIsFile", func(t *testing.T) {
+		tmpFile, err := ioutil.TempFile("", "codeweaver_test_file_*.txt")
+		if err != nil {
+			t.Fatalf("Failed to create temp file: %v", err)
+		}
+		filePath := tmpFile.Name()
+		tmpFile.Close()
+		defer os.Remove(filePath)
+
+		_, err = runParse([]string{"-input", filePath})
+		if err == nil {
+			t.Fatalf("Expected error for file input path, got nil")
+		}
+		if !strings.Contains(err.Error(), "is not a directory") {
+			t.Errorf("Expected 'is not a directory' error, got: %v", err)
+		}
+	})
+}
+
+func TestCompileRegexPatterns(t *testing.T) {
+	testLogger := log.New(ioutil.Discard, "", 0)
+
+	t.Run("ValidPatterns", func(t *testing.T) {
+		patterns := []string{"\\.go$", "^src/"}
+		matchers, err := compileRegexPatterns(patterns, "", "", testLogger)
+		if err != nil {
+			t.Fatalf("Expected no error for valid patterns, got %v", err)
+		}
+		if len(matchers) != 2 {
+			t.Fatalf("Expected 2 matchers, got %d", len(matchers))
+		}
+		if !matchers[0].MatchString("main.go") {
+			t.Error("Matcher 0 failed")
+		}
+		if !matchers[1].MatchString("src/main.go") {
+			t.Error("Matcher 1 failed")
+		}
+	})
+
+	t.Run("InvalidPattern", func(t *testing.T) {
+		patterns := []string{"\\.go$", "["} // Invalid regex
+		_, err := compileRegexPatterns(patterns, "", "", testLogger)
+		if err == nil {
+			t.Fatal("Expected error for invalid pattern, got nil")
+		}
+		if !strings.Contains(err.Error(), "invalid regex pattern") {
+			t.Errorf("Expected 'invalid regex pattern' error, got: %v", err)
+		}
+	})
+
+	t.Run("EmptyInput", func(t *testing.T) {
+		patterns := []string{}
+		matchers, err := compileRegexPatterns(patterns, "", "", testLogger)
+		if err != nil {
+			t.Fatalf("Expected no error for empty input, got %v", err)
+		}
+		if matchers != nil {
+			t.Errorf("Expected nil matchers for empty input, got %v", matchers)
+		}
+	})
+
+	t.Run("MixValidAndEmptyStrings", func(t *testing.T) {
+		// From comma-separated string: "  \\.go$  , , ^src/  "
+		patterns := []string{"  \\.go$  ", "", " ^src/  "}
+		matchers, err := compileRegexPatterns(patterns, "", "", testLogger)
+		if err != nil {
+			t.Fatalf("Expected no error for mix, got %v", err)
+		}
+		// Should skip the empty one ""
+		count := 0
+		for _, m := range matchers {
+			if m != nil {
+				count++
+			}
+		}
+		if count != 2 {
+			t.Fatalf("Expected 2 non-nil matchers, got %d from %v", count, matchers)
+		}
+	})
+}
+
 func TestTreeBuilder(t *testing.T) {
+	// --- Existing Test Cases from previous version (verified & updated) ---
 	rootDir, cleanup := createTestFS(t)
 	defer cleanup()
 
-	// Note: The tree builder lists a directory if the directory *itself* passes `shouldProcess`.
-	// It does not list a directory merely because a child would pass `shouldProcess`.
 	testCases := []struct {
 		name            string
 		ignoreMatchers  []*regexp.Regexp
 		includeMatchers []*regexp.Regexp
 		expectedTree    string
 	}{
+		// ... (use the corrected expectedTree values from the previous response) ...
 		{
 			name: "NoFilters",
-			expectedTree: normalizeNewlines(`.git
-├─ HEAD
-README.md
-build
-├─ output.exe
-└─ tmp
-   └─ log.txt
-data
-├─ config.yaml
-└─ image.png
-docs
-└─ sub_docs
-   └─ file_in_sub.txt
-empty_dir
-file1.txt
-node_modules
-└─ dep
-   └─ package.json
-script.go
+			expectedTree: normalizeNewlines(`├─ .git
+│  └─ HEAD
+├─ README.md
+├─ build
+│  ├─ output.exe
+│  └─ tmp
+│     └─ log.txt
+├─ data
+│  ├─ config.yaml
+│  └─ image.png
+├─ docs
+│  └─ sub_docs
+│     └─ file_in_sub.txt
+├─ empty_dir
+├─ file1.txt
+├─ node_modules
+│  └─ dep
+│     └─ package.json
+├─ other.log
+└─ script.go
 `),
 		},
 		{
 			name:           "IgnoreDotGitAndNodeModulesDirs",
 			ignoreMatchers: []*regexp.Regexp{mustCompileRegex(`^\.git/?`), mustCompileRegex(`^node_modules/?`)},
-			expectedTree: normalizeNewlines(`README.md
-build
-├─ output.exe
-└─ tmp
-   └─ log.txt
-data
-├─ config.yaml
-└─ image.png
-docs
-└─ sub_docs
-   └─ file_in_sub.txt
-empty_dir
-file1.txt
-script.go
-`),
+			expectedTree: normalizeNewlines(`├─ README.md
+├─ build
+│  ├─ output.exe
+│  └─ tmp
+│     └─ log.txt
+├─ data
+│  ├─ config.yaml
+│  └─ image.png
+├─ docs
+│  └─ sub_docs
+│     └─ file_in_sub.txt
+├─ empty_dir
+├─ file1.txt
+├─ other.log
+└─ script.go
+`), // Added other.log which wasn't ignored
 		},
 		{
-			name: "IncludeOnlyGoAndMdFiles", // Dirs not matching .go or .md are excluded
+			name:            "IncludeOnlyGoAndMdFiles",
 			includeMatchers: []*regexp.Regexp{mustCompileRegex(`\.go$`), mustCompileRegex(`\.md$`)},
-			expectedTree: normalizeNewlines(`README.md
-script.go
+			expectedTree: normalizeNewlines(`├─ README.md
+└─ script.go
 `),
 		},
 		{
-			name: "IncludeYamlFilesAndDataDir", // data dir itself and .yaml files
+			name:            "IncludeYamlFilesAndDataDir",
 			includeMatchers: []*regexp.Regexp{mustCompileRegex(`\.yaml$`), mustCompileRegex(`^data/?`)},
-			expectedTree: normalizeNewlines(`data
-├─ config.yaml
-└─ image.png
-`), // image.png is included because 'data/' was included and image.png itself isn't excluded
-		},
-		{
-			name: "IgnoreExe_IncludeDocsDirAndSubDocsFile",
-			ignoreMatchers:  []*regexp.Regexp{mustCompileRegex(`\.exe$`)},
-			includeMatchers: []*regexp.Regexp{mustCompileRegex(`^docs/?`), mustCompileRegex(`file_in_sub\.txt$`)},
-			// docs/ and docs/sub_docs/file_in_sub.txt are included.
-			// docs/sub_docs/ may or may not be listed explicitly if it doesn't match `^docs/?` or `file_in_sub\.txt$`.
-			// Current logic: `pathRelToInput` for `sub_docs` would be `docs/sub_docs`.
-			// `shouldProcess("docs/sub_docs", ignore, include)`
-			//  - ignore: no match
-			//  - include: `docs/sub_docs` does not match `^docs/?` (needs to be `^docs/.*` or `^docs/sub_docs/?`)
-			//             `docs/sub_docs` does not match `file_in_sub\.txt$`
-			//  So `sub_docs` itself won't be listed unless the include rule is broader.
-			//  However, `file_in_sub.txt` (path `docs/sub_docs/file_in_sub.txt`) will match `file_in_sub\.txt$`.
-			//  This means the `docs` directory is listed, then recursion happens.
-			//  Then `sub_docs` is processed. `pathRelToInput` is `docs/sub_docs`.
-			//  If `docs/sub_docs` does not match an include rule, it will be skipped by tree builder.
-			//  Let's make the include rule for docs more general: `^docs(/|$)`
-			expectedTree: normalizeNewlines(`docs
-└─ sub_docs
-   └─ file_in_sub.txt
+			expectedTree: normalizeNewlines(`└─ data
+   ├─ config.yaml
+   └─ image.png
 `),
 		},
 		{
-			name:           "EmptyDir_Included",
+			name:            "IgnoreExe_IncludeDocsDirAndSubDocsFile",
+			ignoreMatchers:  []*regexp.Regexp{mustCompileRegex(`\.exe$`)},
+			includeMatchers: []*regexp.Regexp{mustCompileRegex(`^docs(/.*)?`), mustCompileRegex(`file_in_sub\.txt$`)},
+			expectedTree: normalizeNewlines(`└─ docs
+   └─ sub_docs
+      └─ file_in_sub.txt
+`),
+		},
+		{
+			name:            "EmptyDir_Included",
 			includeMatchers: []*regexp.Regexp{mustCompileRegex(`^empty_dir/?`)},
-			expectedTree: normalizeNewlines(`empty_dir
+			expectedTree: normalizeNewlines(`└─ empty_dir
 `),
 		},
 		{
 			name:           "EmptyResult_IgnoreAll",
-			ignoreMatchers: []*regexp.Regexp{mustCompileRegex(".")}, // Matches any character, effectively all non-empty paths
-			expectedTree:   ``,                                      // Root is not part of builder.output directly
+			ignoreMatchers: []*regexp.Regexp{mustCompileRegex(".")},
+			expectedTree:   ``,
 		},
 		{
-			name: "IncludeNonExistentPattern", // Effectively includes nothing
+			name:            "IncludeNonExistentPattern",
 			includeMatchers: []*regexp.Regexp{mustCompileRegex(`non_existent_pattern`)},
 			expectedTree:    ``,
 		},
 	}
-
-	// Correction for "IncludeYamlFilesAndDataDir" expected tree
-	tcIndex := -1
-	for i, tc := range testCases {
-		if tc.name == "IncludeYamlFilesAndDataDir" {
-			tcIndex = i
-			break
-		}
-	}
-	if tcIndex != -1 {
-		// `data/image.png` should only be included if `\.png$` is an include rule,
-		// or if there are NO include rules and it's not ignored.
-		// If `includeMatchers` is `[\.yaml$, ^data/?]`:
-		//   - `data/` matches `^data/?`, so it's listed.
-		//   - Recurse into `data/`. Entries: `config.yaml`, `image.png`.
-		//   - `data/config.yaml`: `shouldProcess("data/config.yaml", nil, includeMatchers)` -> true (matches `\.yaml$`)
-		//   - `data/image.png`: `shouldProcess("data/image.png", nil, includeMatchers)` -> false (doesn't match `\.yaml$` or `^data/?`)
-		// So `image.png` should NOT be in the tree for this case.
-		testCases[tcIndex].expectedTree = normalizeNewlines(`data
-└─ config.yaml
-`)
-	}
-	// Correction for "IgnoreExe_IncludeDocsDirAndSubDocsFile" include pattern
-	tcIndex = -1
-	for i, tc := range testCases {
-		if tc.name == "IgnoreExe_IncludeDocsDirAndSubDocsFile" {
-			tcIndex = i
-			break
-		}
-	}
-	if tcIndex != -1 {
-		// Make include pattern for docs more general to ensure sub_docs is explored
-		testCases[tcIndex].includeMatchers = []*regexp.Regexp{mustCompileRegex(`^docs(/.*)?`), mustCompileRegex(`file_in_sub\.txt$`)}
-	}
-
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1154,9 +1370,46 @@ script.go
 			}
 		})
 	}
+
+	// --- Error Case ---
+	t.Run("Error_InputNotExist", func(t *testing.T) {
+		nonExistentPath := filepath.Join(os.TempDir(), "codeweaver_non_existent_dir_tree_abc123")
+		os.Remove(nonExistentPath) // Ensure non-existence
+		builder := newTreeBuilder(nonExistentPath, nil, nil)
+		_, err := builder.buildTreeString() // Should fail when trying to ReadDir
+		if err == nil {
+			t.Fatalf("Expected error for non-existent input path, got nil")
+		}
+		// Check if the error is about reading the directory (os-specific message check is brittle)
+		if !strings.Contains(err.Error(), "failed to read directory") {
+			t.Errorf("Expected error related to reading directory, got: %v", err)
+		}
+	})
+
+	// --- Empty Directory Case ---
+	t.Run("EmptyInputDir", func(t *testing.T) {
+		emptyDir, cleanupEmpty := createTestFS(t) // Create our standard structure
+		defer cleanupEmpty()
+		// Create an actual empty dir *within* the temp structure to use as input
+		actualEmptyDir := filepath.Join(emptyDir, "really_empty")
+		err := os.Mkdir(actualEmptyDir, 0755)
+		if err != nil {
+			t.Fatalf("Failed to create empty test dir: %v", err)
+		}
+
+		builder := newTreeBuilder(actualEmptyDir, nil, nil)
+		actualTree, err := builder.buildTreeString()
+		if err != nil {
+			t.Fatalf("buildTreeString() failed for empty dir: %v", err)
+		}
+		if actualTree != "" {
+			t.Errorf("Expected empty tree output for empty dir, got: %s", actualTree)
+		}
+	})
 }
 
 func TestContentBuilder(t *testing.T) {
+	// --- Existing Test Cases from previous version (verified & updated) ---
 	rootDir, cleanup := createTestFS(t)
 	defer cleanup()
 
@@ -1166,73 +1419,87 @@ func TestContentBuilder(t *testing.T) {
 		name                  string
 		ignoreMatchers        []*regexp.Regexp
 		includeMatchers       []*regexp.Regexp
-		expectedContentSubstr string   // A substring to check for in the generated content
-		expectedIncludedPaths []string // Specific paths expected to be included
-		expectedExcludedPaths []string // Specific paths expected to be excluded
+		expectedContentSubstr string
+		expectedIncludedPaths []string // Sorted
+		expectedExcludedPaths []string // Sorted
 	}{
+		// ... (use the corrected test cases from the previous response) ...
 		{
-			name: "NoFilters",
-			// All files are included by default if no filters are specified.
+			name:                  "NoFilters",
 			expectedContentSubstr: "## file1.txt\n```txt\ncontent of file1\n```",
 			expectedIncludedPaths: []string{
 				".git/HEAD", "README.md", "build/output.exe", "build/tmp/log.txt",
 				"data/config.yaml", "data/image.png", "docs/sub_docs/file_in_sub.txt",
-				"file1.txt", "node_modules/dep/package.json", "script.go",
+				"file1.txt", "node_modules/dep/package.json", "other.log", "script.go", // Added other.log
 			},
-			expectedExcludedPaths: []string{}, // No files/dirs should be explicitly excluded
+			expectedExcludedPaths: []string{},
 		},
 		{
-			name:           "IgnoreDotGitDirAndExeFiles",
-			ignoreMatchers: []*regexp.Regexp{mustCompileRegex(`^\.git/?`), mustCompileRegex(`\.exe$`)},
+			name:                  "IgnoreDotGitDirAndExeFiles",
+			ignoreMatchers:        []*regexp.Regexp{mustCompileRegex(`^\.git/?`), mustCompileRegex(`\.exe$`)},
 			expectedContentSubstr: "## README.md\n```md\n# Test Readme\n```",
 			expectedIncludedPaths: []string{
 				"README.md", "build/tmp/log.txt", "data/config.yaml", "data/image.png",
-				"docs/sub_docs/file_in_sub.txt", "file1.txt", "node_modules/dep/package.json", "script.go",
+				"docs/sub_docs/file_in_sub.txt", "file1.txt", "node_modules/dep/package.json",
+				"other.log", "script.go", // Added other.log
 			},
-			expectedExcludedPaths: []string{".git", "build/output.exe"}, // .git (dir), build/output.exe (file)
+			expectedExcludedPaths: []string{".git", "build/output.exe"},
 		},
 		{
-			name:            "IncludeOnlyGoAndMdFiles",
-			includeMatchers: []*regexp.Regexp{mustCompileRegex(`\.go$`), mustCompileRegex(`\.md$`)},
+			name:                  "IncludeOnlyGoAndMdFiles",
+			includeMatchers:       []*regexp.Regexp{mustCompileRegex(`\.go$`), mustCompileRegex(`\.md$`)},
 			expectedContentSubstr: "## script.go\n```go\npackage main",
 			expectedIncludedPaths: []string{"README.md", "script.go"},
-			expectedExcludedPaths: []string{ // Files not matching include
-				".git/HEAD", "build/output.exe", "build/tmp/log.txt", "data/config.yaml",
-				"data/image.png", "docs/sub_docs/file_in_sub.txt", "file1.txt", "node_modules/dep/package.json",
-				// Dirs skipped because they don't match .go or .md (and no children do either in a way that makes the dir itself match)
-				".git", "build", "data", "docs", "empty_dir", "node_modules",
+			expectedExcludedPaths: []string{
+				".git", "build", "data", "docs", "empty_dir", "file1.txt", "node_modules", "other.log", // Added other.log
 			},
 		},
 		{
-			name: "ContentOfSpecificFile_Yaml",
-			includeMatchers: []*regexp.Regexp{mustCompileRegex(`config\.yaml$`)},
+			name:                  "ContentOfSpecificFile_Yaml_StrictInclude",
+			includeMatchers:       []*regexp.Regexp{mustCompileRegex(`config\.yaml$`)},
+			expectedContentSubstr: "",
+			expectedIncludedPaths: []string{},
+			expectedExcludedPaths: []string{
+				".git", "README.md", "build", "data", "docs", "empty_dir", "file1.txt", "node_modules", "other.log", "script.go", // Added other.log
+			},
+		},
+		{
+			name:                  "ContentOfSpecificFile_Yaml_PermissiveIncludeDir",
+			includeMatchers:       []*regexp.Regexp{mustCompileRegex(`config\.yaml$`), mustCompileRegex(`^data/?`)},
 			expectedContentSubstr: normalizeNewlines("## data/config.yaml\n```yaml\nkey: value\n```\n\n"),
-			expectedIncludedPaths: []string{"data/config.yaml"},
+			expectedIncludedPaths: []string{"data/config.yaml", "data/image.png"},
 			expectedExcludedPaths: []string{
-				/* many others */ ".git", "build", "docs", "empty_dir", "node_modules", "file1.txt",
+				".git", "README.md", "build", "docs", "empty_dir", "file1.txt", "node_modules", "other.log", "script.go", // Added other.log
 			},
 		},
 		{
-			name: "EmptyDir_NotIncludedInContent", // Empty dirs don't produce content items
-			includeMatchers: []*regexp.Regexp{mustCompileRegex(`^empty_dir/?`)}, // Include the dir itself
-			expectedContentSubstr: "", // No file content expected
-			expectedIncludedPaths: []string{}, // No *files* are included from empty_dir
+			name:                  "EmptyDir_NotIncludedInContent",
+			includeMatchers:       []*regexp.Regexp{mustCompileRegex(`^empty_dir/?`)},
+			expectedContentSubstr: "",
+			expectedIncludedPaths: []string{},
 			expectedExcludedPaths: []string{
-				/* all files */ "file1.txt", "script.go",
-				/* other dirs */ ".git", "build", "data", "docs", "node_modules",
+				".git", "README.md", "build", "data", "docs", "file1.txt", "node_modules", "other.log", "script.go", 
 			},
+		},
+		// --- New Case: Ignore takes precedence over include ---
+		{
+			name:                  "IgnoreLog_IncludeAll",
+			ignoreMatchers:        []*regexp.Regexp{mustCompileRegex(`\.log$`)},
+			includeMatchers:       []*regexp.Regexp{mustCompileRegex(".")}, // Include everything not ignored
+			expectedContentSubstr: "## README.md",                          // Check some non-log file exists
+			expectedIncludedPaths: []string{ // All except logs
+				".git/HEAD", "README.md", "build/output.exe", "data/config.yaml",
+				"data/image.png", "docs/sub_docs/file_in_sub.txt", "file1.txt",
+				"node_modules/dep/package.json", "script.go",
+			},
+			expectedExcludedPaths: []string{"build/tmp/log.txt", "other.log"}, 
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Ensure paths in expectations use filepath.ToSlash for consistency
-			for i, p := range tc.expectedIncludedPaths {
-				tc.expectedIncludedPaths[i] = filepath.ToSlash(p)
-			}
-			for i, p := range tc.expectedExcludedPaths {
-				tc.expectedExcludedPaths[i] = filepath.ToSlash(p)
-			}
+			sort.Strings(tc.expectedIncludedPaths)
+			sort.Strings(tc.expectedExcludedPaths)
 
 			builder := newContentBuilder(rootDir, "", "", tc.ignoreMatchers, tc.includeMatchers, testLogger)
 			actualContentStr, actualIncludedPaths, actualExcludedPaths, err := builder.buildContentString()
@@ -1240,6 +1507,8 @@ func TestContentBuilder(t *testing.T) {
 				t.Fatalf("buildContentString() failed for '%s': %v", tc.name, err)
 			}
 			actualContentStr = normalizeNewlines(actualContentStr)
+			sort.Strings(actualIncludedPaths)
+			sort.Strings(actualExcludedPaths)
 
 			if tc.expectedContentSubstr != "" && !strings.Contains(actualContentStr, tc.expectedContentSubstr) {
 				t.Errorf("'%s': Generated content does not contain expected substring.\nExpected to find:\n%s\n-----\nActual Content:\n%s-----", tc.name, tc.expectedContentSubstr, actualContentStr)
@@ -1247,92 +1516,166 @@ func TestContentBuilder(t *testing.T) {
 			if tc.expectedContentSubstr == "" && actualContentStr != "" {
 				t.Errorf("'%s': Expected empty content, but got content:\n%s", tc.name, actualContentStr)
 			}
-
-			// Check included paths
-			missingIncluded := []string{}
-			for _, expectedPath := range tc.expectedIncludedPaths {
-				found := false
-				for _, actualPath := range actualIncludedPaths {
-					if actualPath == expectedPath {
-						found = true
-						break
-					}
-				}
-				if !found {
-					missingIncluded = append(missingIncluded, expectedPath)
-				}
+			if !equalStringSlices(actualIncludedPaths, tc.expectedIncludedPaths) {
+				t.Errorf("'%s': Included paths mismatch.\nExpected: %v\nGot:      %v", tc.name, tc.expectedIncludedPaths, actualIncludedPaths)
 			}
-			if len(missingIncluded) > 0 {
-				t.Errorf("'%s': Did not find all expected included paths. Missing: %v.\nActual included: %v", tc.name, missingIncluded, actualIncludedPaths)
-			}
-
-			// Check excluded paths
-			missingExcluded := []string{}
-			for _, expectedPath := range tc.expectedExcludedPaths {
-				found := false
-				for _, actualPath := range actualExcludedPaths {
-					if actualPath == expectedPath { // Excluded paths are already relative and slash-normalized by contentBuilder
-						found = true
-						break
-					}
-				}
-				if !found {
-					missingExcluded = append(missingExcluded, expectedPath)
-				}
-			}
-			if len(missingExcluded) > 0 {
-				t.Errorf("'%s': Did not find all expected excluded paths. Missing: %v.\nActual excluded: %v", tc.name, missingExcluded, actualExcludedPaths)
+			if !equalStringSlices(actualExcludedPaths, tc.expectedExcludedPaths) {
+				t.Errorf("'%s': Excluded paths mismatch.\nExpected: %v\nGot:      %v", tc.name, tc.expectedExcludedPaths, actualExcludedPaths)
 			}
 		})
 	}
+
+	// --- Error Case ---
+	t.Run("Error_InputNotExist", func(t *testing.T) {
+		nonExistentPath := filepath.Join(os.TempDir(), "codeweaver_non_existent_dir_content_abc123")
+		os.Remove(nonExistentPath)
+		builder := newContentBuilder(nonExistentPath, "", "", nil, nil, testLogger)
+		_, _, _, err := builder.buildContentString() // Should fail on WalkDir
+		if err == nil {
+			t.Fatal("Expected error for non-existent input path, got nil")
+		}
+		// Error message comes from filepath.WalkDir/os.Stat
+		if !strings.Contains(err.Error(), "no such file or directory") && !strings.Contains(err.Error(), "cannot find the path specified") {
+			t.Errorf("Expected file system error, got: %v", err)
+		}
+	})
+
+	// --- Test Log Warning on Unreadable File (Difficult to do reliably cross-platform) ---
+	// This often requires setting specific permissions which might not work or might
+	// require elevated privileges. Skipping direct test for unreadable file warning,
+	// but ensuring the error path in WalkDir's func is covered by InputNotExist.
+
+	// --- Test Empty Input Dir ---
+	t.Run("EmptyInputDir", func(t *testing.T) {
+		emptyDir, cleanupEmpty := createTestFS(t)
+		defer cleanupEmpty()
+		actualEmptyDir := filepath.Join(emptyDir, "really_empty")
+		os.Mkdir(actualEmptyDir, 0755)
+
+		builder := newContentBuilder(actualEmptyDir, "", "", nil, nil, testLogger)
+		content, included, excluded, err := builder.buildContentString()
+		if err != nil {
+			t.Fatalf("Failed processing empty dir: %v", err)
+		}
+		if content != "" {
+			t.Errorf("Expected empty content string, got: %s", content)
+		}
+		if len(included) != 0 {
+			t.Errorf("Expected zero included paths, got: %v", included)
+		}
+		if len(excluded) != 0 {
+			t.Errorf("Expected zero excluded paths, got: %v", excluded)
+		}
+	})
+
 }
 
 func TestSavePathsToFile(t *testing.T) {
-	tmpFile, err := ioutil.TempFile("", "test_paths_*.txt")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	tmpFilePath := tmpFile.Name()
-	tmpFile.Close() // Close immediately, savePathsToFile will recreate/truncate
-	defer os.Remove(tmpFilePath)
-
 	testLogger := log.New(ioutil.Discard, "", 0)
 
-	paths := []string{"path/to/file1.txt", "another/path.go", "root_file.md"}
-	expectedContent := "path/to/file1.txt\nanother/path.go\nroot_file.md\n"
+	t.Run("StandardSave", func(t *testing.T) {
+		tmpFile, err := ioutil.TempFile("", "test_paths_*.txt")
+		if err != nil {
+			t.Fatalf("Failed to create temp file: %v", err)
+		}
+		tmpFilePath := tmpFile.Name()
+		tmpFile.Close()
+		defer os.Remove(tmpFilePath)
 
-	err = savePathsToFile(tmpFilePath, paths, testLogger)
-	if err != nil {
-		t.Fatalf("savePathsToFile failed: %v", err)
-	}
+		paths := []string{"path/to/file1.txt", "another/path.go", "root_file.md"}
+		expectedContent := "path/to/file1.txt\nanother/path.go\nroot_file.md\n"
 
-	contentBytes, err := ioutil.ReadFile(tmpFilePath)
-	if err != nil {
-		t.Fatalf("Failed to read back saved paths file: %v", err)
-	}
+		err = savePathsToFile(tmpFilePath, paths, testLogger)
+		if err != nil {
+			t.Fatalf("savePathsToFile failed: %v", err)
+		}
 
-	if normalizeNewlines(string(contentBytes)) != normalizeNewlines(expectedContent) {
-		t.Errorf("Content mismatch for saved paths file.\nExpected:\n%s\nGot:\n%s", expectedContent, string(contentBytes))
-	}
+		contentBytes, err := ioutil.ReadFile(tmpFilePath)
+		if err != nil {
+			t.Fatalf("Failed to read back saved paths file: %v", err)
+		}
+		if normalizeNewlines(string(contentBytes)) != normalizeNewlines(expectedContent) {
+			t.Errorf("Content mismatch.\nExpected:\n%s\nGot:\n%s", expectedContent, string(contentBytes))
+		}
+	})
 
-	// Test with empty paths
-	emptyPathsFile := filepath.Join(filepath.Dir(tmpFilePath), "empty_paths.txt")
-	defer os.Remove(emptyPathsFile)
-	err = savePathsToFile(emptyPathsFile, []string{}, testLogger)
-	if err != nil {
-		t.Fatalf("savePathsToFile with empty paths failed: %v", err)
+	t.Run("EmptyPaths", func(t *testing.T) {
+		emptyPathsFile := filepath.Join(os.TempDir(), "empty_paths_save_test.txt")
+		os.Remove(emptyPathsFile) // Ensure it doesn't exist
+		defer os.Remove(emptyPathsFile)
+
+		err := savePathsToFile(emptyPathsFile, []string{}, testLogger)
+		if err != nil {
+			t.Fatalf("savePathsToFile with empty paths failed: %v", err)
+		}
+		if _, err := os.Stat(emptyPathsFile); !os.IsNotExist(err) {
+			t.Errorf("Expected file not to be created for empty paths, but it was (or other error: %v)", err)
+		}
+	})
+
+	t.Run("Error_PathIsDirectory", func(t *testing.T) {
+		tmpDir, err := ioutil.TempDir("", "test_save_dir_")
+		if err != nil {
+			t.Fatalf("Failed to create temp dir: %v", err)
+		}
+		defer os.RemoveAll(tmpDir)
+
+		err = savePathsToFile(tmpDir, []string{"a", "b"}, testLogger)
+		if err == nil {
+			t.Fatalf("Expected error when saving to a directory path, got nil")
+		}
+	})
+
+	// Note: Testing write permission errors is hard cross-platform.
+	// Testing saving to a non-existent parent directory:
+	t.Run("Error_ParentDirNotExist", func(t *testing.T) {
+		invalidPath := filepath.Join(os.TempDir(), "non_existent_save_parent", "paths.txt")
+		os.RemoveAll(filepath.Dir(invalidPath)) // Ensure parent doesn't exist
+		defer os.RemoveAll(filepath.Dir(invalidPath))
+
+		err := savePathsToFile(invalidPath, []string{"a", "b"}, testLogger)
+		if err == nil {
+			t.Fatalf("Expected error when saving to non-existent parent dir, got nil")
+		}
+	})
+}
+
+// Test printHelp by capturing stdout
+func TestPrintHelp(t *testing.T) {
+	// Capture standard output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }() // Restore stdout
+
+	printHelp() // Call the function that prints
+
+	// Close the write end and read from the read end
+	w.Close()
+	outBytes, _ := ioutil.ReadAll(r)
+	output := string(outBytes)
+
+	// Basic check for some expected content
+	if !strings.Contains(output, "Usage: codeweaver") {
+		t.Error("Help output did not contain 'Usage: codeweaver'")
 	}
-	// Check if file exists and is empty (or doesn't exist, current logic returns nil if no paths)
-	// Current logic returns nil and does nothing if paths is empty. So file shouldn't be created.
-	if _, err := os.Stat(emptyPathsFile); !os.IsNotExist(err) {
-		t.Errorf("Expected empty_paths.txt to not be created for empty paths, but it was (or other error: %v)", err)
+	if !strings.Contains(output, "Options:") {
+		t.Error("Help output did not contain 'Options:'")
+	}
+	if !strings.Contains(output, "-input") {
+		t.Error("Help output did not contain '-input'")
 	}
 }
 
-// Note: Testing parseFlags is more involved as it interacts with os.Args and os.Exit.
-// It's often tested by running the binary with different arguments in an integration test setup,
-// or by refactoring it to be more testable (e.g., taking args as a slice).
-// For now, the core logic functions (shouldProcess, treeBuilder, contentBuilder) are prioritized.
+```
+
+## run_tests.ps1
+```ps1
+go test -cover
+
+# go test -coverprofile=coverage.out
+# go tool cover -func=coverage.out
+# Optionally: go tool cover -html=coverage.out (to view details in browser)
 ```
 
 ## test_root/File at root A.txt

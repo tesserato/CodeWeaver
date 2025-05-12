@@ -191,8 +191,9 @@ func compileRegexPatterns(patterns []string, color, prefix string, logger *log.L
 	if len(patterns) == 0 {
 		return nil, nil
 	}
-	matchers := make([]*regexp.Regexp, len(patterns))
-	for i, p := range patterns {
+	// Pre-allocate close to the expected size, but use append for flexibility
+	compiledMatchers := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
 		trimmedPattern := strings.TrimSpace(p)
 		if trimmedPattern == "" {
 			continue // Skip empty patterns that might result from trailing commas
@@ -200,11 +201,16 @@ func compileRegexPatterns(patterns []string, color, prefix string, logger *log.L
 		logger.Printf("%s%s %s%s\n", color, prefix, trimmedPattern, colorReset)
 		rgx, err := regexp.Compile(trimmedPattern)
 		if err != nil {
+			// Fail completely if any pattern is invalid
 			return nil, fmt.Errorf("invalid regex pattern '%s': %w", trimmedPattern, err)
 		}
-		matchers[i] = rgx
+		compiledMatchers = append(compiledMatchers, rgx) // Append the valid regex
 	}
-	return matchers, nil
+	// Return nil if no valid patterns were actually found after trimming/skipping
+	if len(compiledMatchers) == 0 {
+		return nil, nil
+	}
+	return compiledMatchers, nil
 }
 
 // shouldProcess determines if a path should be processed based on include and ignore patterns.
@@ -345,12 +351,13 @@ func (cb *contentBuilder) buildContentString() (string, []string, []string, erro
 
 	err := filepath.WalkDir(cb.rootAbsPath, func(currentWalkPath string, d fs.DirEntry, err error) error {
 		if err != nil {
-			// Report error and attempt to continue if possible, unless it's critical.
+			// If WalkDir encounters an error accessing a path (like permission denied or root not existing),
+			// report it and return the error to stop the walk unless it's skippable.
 			cb.logger.Printf("%sWarning: Error accessing %s: %v%s\n", colorRed, currentWalkPath, err, colorReset)
-			if d != nil && d.IsDir() { // If it's a directory error, might not be skippable
-				return filepath.SkipDir // Try to skip this problematic directory
-			}
-			return nil // Skip this problematic file entry
+			// Allow skipping directories if the error is related to reading its contents,
+			// but critical errors (like the starting path itself not existing) should halt.
+			// Returning the error is generally safer.
+			return err
 		}
 
 		pathRelToInput, relErr := filepath.Rel(cb.rootAbsPath, currentWalkPath)
