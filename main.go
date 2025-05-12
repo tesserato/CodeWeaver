@@ -3,288 +3,446 @@ package main
 import (
 	"flag"
 	"fmt"
-	"golang.design/x/clipboard"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
+
+	"golang.design/x/clipboard"
+)
+
+const (
+	colorRed       = "\033[31m"
+	colorLiteRed   = "\033[91m"
+	colorGreen     = "\033[32m"
+	colorLiteGreen = "\033[92m"
+	colorReset     = "\033[0m"
+)
+
+var (
+	// Populated by goreleaser during build
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
 )
 
 func main() {
-	// Define command line flags
-	dirPath := flag.String("input", ".", "Directory to scan")
-	outputFileName := flag.String("output", "codebase.md", "Output file name")
-	ignorePatterns := flag.String("ignore", `\.git.*`, "Comma-separated list of regular expression patterns that match the paths to be ignored")
-	includePatterns := flag.String("include", ``, "Comma-separated list of regular expression patterns that match the paths to be included")
-	includedPathsFile := flag.String("included-paths-file", "", "File to save included paths (optional). If provided, the included paths will be saved to the file and not printed to the console.")
-	excludedPathsFile := flag.String("excluded-paths-file", "", "File to save excluded paths (optional). If provided, the excluded paths will be saved to the file and not printed to the console.")
-	addResultToClipBoard := flag.Bool("clipboard", false, "Add result to clipboard")
-	showHelp := flag.Bool("help", false, "Show help message and exit")
+	cfg, err := parseFlags()
+	if err != nil {
+		// parseFlags handles help and version, so other errors are actual problems.
+		log.Fatalf("Error parsing flags: %v", err)
+	}
 
-	flag.Parse()
+	if cfg.showVersion {
+		fmt.Printf("CodeWeaver version %s\ncommit %s\nbuilt at %s\n", version, commit, date)
+		return
+	}
 
-	// Check if help flag is set or no arguments are provided
-	if *showHelp || len(os.Args) == 1 {
+	if cfg.showHelp {
 		printHelp()
 		return
 	}
 
-	var ignoreList []*regexp.Regexp
-	var includeList []*regexp.Regexp
+	logger := log.New(os.Stdout, "", 0) // Simple logger for progress messages
 
-	// Process ignore patterns if provided
-	if *ignorePatterns != "" {
-		ignoreListString := strings.Split(*ignorePatterns, ",")
-		ignoreList = make([]*regexp.Regexp, len(ignoreListString))
+	logger.Println("Starting CodeWeaver...")
+	logger.Println("Input directory:", cfg.inputDirAbs)
+	logger.Println("Output file:", cfg.outputFile)
+	if cfg.includedPathsFile != "" {
+		logger.Println("Included paths will be saved to:", cfg.includedPathsFile)
+	}
+	if cfg.excludedPathsFile != "" {
+		logger.Println("Excluded paths will be saved to:", cfg.excludedPathsFile)
+	}
+	if cfg.addToClipboard {
+		logger.Println("Result will be copied to clipboard.")
+	}
+	logger.Println()
 
-		for i, pattern := range ignoreListString {
-			fmt.Println(ignoreListString[i])
-			ignoreList[i] = regexp.MustCompile(strings.TrimSpace(pattern))
+	ignoreMatchers, err := compileRegexPatterns(cfg.ignorePatterns, colorLiteRed, "- RGX:", logger)
+	if err != nil {
+		log.Fatalf("Error compiling ignore patterns: %v", err)
+	}
+	includeMatchers, err := compileRegexPatterns(cfg.includePatterns, colorLiteGreen, "+ RGX:", logger)
+	if err != nil {
+		log.Fatalf("Error compiling include patterns: %v", err)
+	}
+	logger.Println()
+
+	var markdownContent strings.Builder
+
+	// --- Build Tree View ---
+	markdownContent.WriteString("# Tree View:\n```\n")
+	// Display the original input path as the root, not the absolute one, for user-friendliness
+	markdownContent.WriteString(filepath.ToSlash(cfg.inputDirOriginal) + "\n")
+
+	treeBuilder := newTreeBuilder(cfg.inputDirAbs, ignoreMatchers, includeMatchers)
+	treeString, err := treeBuilder.buildTreeString()
+	if err != nil {
+		log.Fatalf("Error building codebase tree: %v", err)
+	}
+	markdownContent.WriteString(treeString)
+	markdownContent.WriteString("```\n")
+
+	// --- Build Content Section ---
+	markdownContent.WriteString("\n# Content:\n")
+	contentBuilder := newContentBuilder(cfg.inputDirAbs, cfg.includedPathsFile, cfg.excludedPathsFile, ignoreMatchers, includeMatchers, logger)
+	contentString, includedPaths, excludedPaths, err := contentBuilder.buildContentString()
+	if err != nil {
+		log.Fatalf("Error writing code content: %v", err)
+	}
+	markdownContent.WriteString(contentString)
+
+	// --- Write to Output File ---
+	err = os.WriteFile(cfg.outputFile, []byte(markdownContent.String()), 0644)
+	if err != nil {
+		log.Fatalf("Error writing to output file %s: %v", cfg.outputFile, err)
+	}
+	logger.Printf("Markdown content written to %s\n", cfg.outputFile)
+
+	// --- Save Included/Excluded Paths ---
+	if cfg.includedPathsFile != "" {
+		if err := savePathsToFile(cfg.includedPathsFile, includedPaths, logger); err != nil {
+			logger.Printf("%sWarning: Error saving included paths to %s: %v%s\n", colorRed, cfg.includedPathsFile, err, colorReset)
+		}
+	}
+	if cfg.excludedPathsFile != "" {
+		if err := savePathsToFile(cfg.excludedPathsFile, excludedPaths, logger); err != nil {
+			logger.Printf("%sWarning: Error saving excluded paths to %s: %v%s\n", colorRed, cfg.excludedPathsFile, err, colorReset)
 		}
 	}
 
-	// Process include patterns if provided
-	if *includePatterns != "" {
-		includeListString := strings.Split(*includePatterns, ",")
-		includeList = make([]*regexp.Regexp, len(includeListString))
-
-		for i, pattern := range includeListString {
-			fmt.Println(includeListString[i])
-			includeList[i] = regexp.MustCompile(strings.TrimSpace(pattern))
-		}
-	}
-
-	// Create the output file
-	outputFile, err := os.Create(*outputFileName)
-	if err != nil {
-		fmt.Println("Error creating output file:", err)
-		return
-	}
-	defer outputFile.Close()
-
-	// Write the codebase tree to the output file
-	fmt.Fprintln(outputFile, "# Tree View:\n```")
-	fmt.Fprintf(outputFile, "%s\n", *dirPath)
-
-	depthOpen := make(map[int]bool)
-	err = printTree(*dirPath, 0, depthOpen, ignoreList, includeList, outputFile)
-	if err != nil {
-		fmt.Println("Error printing codebase tree:", err)
-		return
-	}
-	fmt.Fprintln(outputFile, "```")
-
-	// Write the code content to the output file
-	fmt.Fprintln(outputFile, "\n# Content:\n")
-	err = writeCodeContent(*dirPath, ignoreList, includeList, outputFile, *includedPathsFile, *excludedPathsFile)
-	if err != nil {
-		fmt.Println("Error writing code content:", err)
-		return
-	}
-
-	if *addResultToClipBoard {
-		err := clipboard.Init()
-		if err != nil {
-			fmt.Println("Error copying generated documento to clipboard:", err)
+	// --- Copy to Clipboard ---
+	if cfg.addToClipboard {
+		if err := clipboard.Init(); err != nil {
+			logger.Printf("%sWarning: Could not initialize clipboard: %v%s\n", colorRed, err, colorReset)
 		} else {
-			outputFileBytes, err := os.ReadFile(*outputFileName)
-			if err != nil {
-				fmt.Println("Error reading output file:", err)
-			} else {
-				clipboard.Write(clipboard.FmtText, outputFileBytes)
-			}
+			clipboard.Write(clipboard.FmtText, []byte(markdownContent.String()))
+			logger.Println("Markdown content copied to clipboard.")
 		}
 	}
-
-	fmt.Println("Codebase documentation generated successfully!")
 }
 
-// printTree recursively walks the directory tree and prints the structure to the output file
-func printTree(dirPath string, depth int, depthOpen map[int]bool, ignoreList, includeList []*regexp.Regexp, outputFile *os.File) error {
-	files, err := os.ReadDir(dirPath)
-	if err != nil {
-		return err
-	}
-
-	// Filter files based on ignore/include patterns
-	var filteredFiles []fs.DirEntry
-	for _, file := range files {
-		filePath := filepath.Join(dirPath, file.Name())
-		relPath, _ := filepath.Rel(".", filePath)
-		if shouldProcess(relPath, ignoreList, includeList) {
-			filteredFiles = append(filteredFiles, file)
-		}
-	}
-
-	for i, file := range filteredFiles {
-		filePath := filepath.Join(dirPath, file.Name())
-
-		var pipe string = "├─"
-		depthOpen[depth] = true
-		if i == len(filteredFiles)-1 { // Use filteredFiles length
-			pipe = "└─"
-			depthOpen[depth] = false
-		}
-
-		indent := []rune("")
-		if depth > 0 {
-			indent = []rune(strings.Repeat("  ", depth))
-			for j := 0; j < depth; j++ {
-				if depthOpen[j] {
-					indent[j*2] = '│'
-				}
-			}
-		}
-
-		if file.IsDir() {
-			fmt.Fprintf(outputFile, "%s%s%s\n", string(indent), pipe, file.Name())
-			printTree(filePath, depth+1, depthOpen, ignoreList, includeList, outputFile)
-			depthOpen[depth] = false
-		} else {
-			fmt.Fprintf(outputFile, "%s%s%s\n", string(indent), pipe, file.Name())
-		}
-	}
-
-	return nil
+type config struct {
+	inputDirOriginal  string
+	inputDirAbs       string
+	outputFile        string
+	ignorePatterns    []string
+	includePatterns   []string
+	includedPathsFile string
+	excludedPathsFile string
+	addToClipboard    bool
+	showHelp          bool
+	showVersion       bool
 }
 
-// writeCodeContent reads the content of each file and writes it to the output file within a code block
-func writeCodeContent(dirPath string, ignoreList, includeList []*regexp.Regexp, outputFile *os.File, includedPathsFile, excludedPathsFile string) error {
-	Red := "\033[31m"
-	Green := "\033[32m"
-	Reset := "\033[0m"
-	var includedPaths []string
-	var excludedPaths []string
+func parseFlags() (*config, error) {
+	cfg := &config{}
+	flag.StringVar(&cfg.inputDirOriginal, "input", ".", "The root directory to scan.")
+	flag.StringVar(&cfg.outputFile, "output", "codebase.md", "The name of the output Markdown file.")
+	ignoreStr := flag.String("ignore", `\.git.*`, "Comma-separated list of regular expressions for paths to *exclude* (relative to input directory).")
+	includeStr := flag.String("include", "", "Comma-separated list of regular expressions. *Only* paths matching these are *included* (relative to input directory).")
+	flag.StringVar(&cfg.includedPathsFile, "included-paths-file", "", "Saves the list of *included* paths to this file.")
+	flag.StringVar(&cfg.excludedPathsFile, "excluded-paths-file", "", "Saves the list of *excluded* paths to this file.")
+	flag.BoolVar(&cfg.addToClipboard, "clipboard", false, "Copies the generated Markdown to the clipboard.")
+	flag.BoolVar(&cfg.showVersion, "version", false, "Displays the version and exits.")
+	flag.BoolVar(&cfg.showHelp, "help", false, "Displays help message and exits.")
 
-	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+	flag.Usage = printHelp // Override default usage
+	flag.Parse()
+
+	if cfg.showHelp || cfg.showVersion {
+		// Let main handle printing help/version
+		return cfg, nil
+	}
+
+	var err error
+	cfg.inputDirAbs, err = filepath.Abs(cfg.inputDirOriginal)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get absolute path for input directory '%s': %w", cfg.inputDirOriginal, err)
+	}
+
+	// Check if input directory exists and is a directory
+	info, err := os.Stat(cfg.inputDirAbs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("input directory '%s' does not exist", cfg.inputDirAbs)
+		}
+		return nil, fmt.Errorf("error accessing input directory '%s': %w", cfg.inputDirAbs, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("input path '%s' is not a directory", cfg.inputDirAbs)
+	}
+
+	if *ignoreStr != "" {
+		cfg.ignorePatterns = strings.Split(*ignoreStr, ",")
+	}
+	if *includeStr != "" {
+		cfg.includePatterns = strings.Split(*includeStr, ",")
+	}
+
+	return cfg, nil
+}
+
+func compileRegexPatterns(patterns []string, color, prefix string, logger *log.Logger) ([]*regexp.Regexp, error) {
+	if len(patterns) == 0 {
+		return nil, nil
+	}
+	matchers := make([]*regexp.Regexp, len(patterns))
+	for i, p := range patterns {
+		trimmedPattern := strings.TrimSpace(p)
+		if trimmedPattern == "" {
+			continue // Skip empty patterns that might result from trailing commas
+		}
+		logger.Printf("%s%s %s%s\n", color, prefix, trimmedPattern, colorReset)
+		rgx, err := regexp.Compile(trimmedPattern)
 		if err != nil {
-			return err
+			return nil, fmt.Errorf("invalid regex pattern '%s': %w", trimmedPattern, err)
 		}
+		matchers[i] = rgx
+	}
+	return matchers, nil
+}
 
-		relPath, _ := filepath.Rel(".", path)
-		if relPath == "." { // Skip processing the root directory entry itself directly
-			return nil
+// shouldProcess determines if a path should be processed based on include and ignore patterns.
+// The path argument must be relative to the input directory and use forward slashes.
+func shouldProcess(pathRelToInput string, ignoreMatchers, includeMatchers []*regexp.Regexp) bool {
+	// Check exclusion first
+	for _, pattern := range ignoreMatchers {
+		if pattern != nil && pattern.MatchString(pathRelToInput) {
+			return false // Excluded
 		}
+	}
 
-		// Check if the file/directory should be processed
-		if !shouldProcess(relPath, ignoreList, includeList) {
-			if excludedPathsFile == "" {
-				fmt.Println(Red + "- " + path + Reset)
-			} else {
-				excludedPaths = append(excludedPaths, path)
+	// If include patterns are defined, path must match at least one
+	if len(includeMatchers) > 0 {
+		matchedInclude := false
+		for _, pattern := range includeMatchers {
+			if pattern != nil && pattern.MatchString(pathRelToInput) {
+				matchedInclude = true
+				break
 			}
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil // If it's a file, just skip this file and continue
 		}
-
-		if includedPathsFile == "" {
-			fmt.Println(Green + "+ " + path + Reset)
-		} else {
-			includedPaths = append(includedPaths, path)
+		if !matchedInclude {
+			return false // Not in include list
 		}
+	}
 
-		if !d.IsDir() {
-			content, err := os.ReadFile(path)
+	return true // Included (or not excluded if no include list)
+}
+
+type treeBuilder struct {
+	rootAbsPath     string
+	ignoreMatchers  []*regexp.Regexp
+	includeMatchers []*regexp.Regexp
+	output          strings.Builder
+	depthOpen       map[int]bool // Tracks open branches for │ character
+}
+
+func newTreeBuilder(rootAbsPath string, ignoreMatchers, includeMatchers []*regexp.Regexp) *treeBuilder {
+	return &treeBuilder{
+		rootAbsPath:     rootAbsPath,
+		ignoreMatchers:  ignoreMatchers,
+		includeMatchers: includeMatchers,
+		depthOpen:       make(map[int]bool),
+	}
+}
+
+func (tb *treeBuilder) buildTreeString() (string, error) {
+	err := tb.printTreeRecursive(tb.rootAbsPath, 0)
+	return tb.output.String(), err
+}
+
+func (tb *treeBuilder) printTreeRecursive(currentDirPath string, depth int) error {
+	entries, err := os.ReadDir(currentDirPath)
+	if err != nil {
+		return fmt.Errorf("failed to read directory %s: %w", currentDirPath, err)
+	}
+
+	var filteredEntries []fs.DirEntry
+	for _, entry := range entries {
+		fullEntryPath := filepath.Join(currentDirPath, entry.Name())
+		pathRelToInput, err := filepath.Rel(tb.rootAbsPath, fullEntryPath)
+		if err != nil {
+			return fmt.Errorf("failed to make path %s relative to %s: %w", fullEntryPath, tb.rootAbsPath, err)
+		}
+		pathRelToInput = filepath.ToSlash(pathRelToInput)
+
+		if shouldProcess(pathRelToInput, tb.ignoreMatchers, tb.includeMatchers) {
+			filteredEntries = append(filteredEntries, entry)
+		}
+	}
+
+	// Sort entries alphabetically for consistent output
+	sort.Slice(filteredEntries, func(i, j int) bool {
+		return filteredEntries[i].Name() < filteredEntries[j].Name()
+	})
+
+	for i, entry := range filteredEntries {
+		isLastEntry := (i == len(filteredEntries)-1)
+		tb.printEntry(entry, depth, isLastEntry)
+
+		if entry.IsDir() {
+			tb.depthOpen[depth] = !isLastEntry
+			err := tb.printTreeRecursive(filepath.Join(currentDirPath, entry.Name()), depth+1)
 			if err != nil {
 				return err
 			}
-			extension := filepath.Ext(path)
-			extension = strings.ToLower(extension)
-			extension = strings.TrimPrefix(extension, ".")
-			fmt.Fprintf(outputFile, "## %s\n", path)
-			fmt.Fprintf(outputFile, "```%s\n%s\n```\n\n", extension, content)
+		}
+	}
+	return nil
+}
+
+func (tb *treeBuilder) printEntry(entry fs.DirEntry, depth int, isLast bool) {
+	var prefix strings.Builder
+	for i := 0; i < depth; i++ {
+		if tb.depthOpen[i] {
+			prefix.WriteString("│  ")
+		} else {
+			prefix.WriteString("   ") // Was "  " - need three spaces to align with "└─ " or "├─ "
+		}
+	}
+
+	if isLast {
+		prefix.WriteString("└─ ")
+	} else {
+		prefix.WriteString("├─ ")
+	}
+
+	tb.output.WriteString(prefix.String())
+	tb.output.WriteString(entry.Name())
+	tb.output.WriteString("\n")
+}
+
+type contentBuilder struct {
+	rootAbsPath       string
+	includedPathsFile string
+	excludedPathsFile string
+	ignoreMatchers    []*regexp.Regexp
+	includeMatchers   []*regexp.Regexp
+	logger            *log.Logger
+}
+
+func newContentBuilder(
+	rootAbsPath string, includedPathsFile string, excludedPathsFile string, ignoreMatchers []*regexp.Regexp, includeMatchers []*regexp.Regexp, logger *log.Logger) *contentBuilder {
+	return &contentBuilder{
+		rootAbsPath:       rootAbsPath,
+		includedPathsFile: includedPathsFile,
+		excludedPathsFile: excludedPathsFile,
+		ignoreMatchers:    ignoreMatchers,
+		includeMatchers:   includeMatchers,
+		logger:            logger,
+	}
+}
+
+func (cb *contentBuilder) buildContentString() (string, []string, []string, error) {
+	var content strings.Builder
+	var includedPaths []string
+	var excludedPaths []string
+
+	err := filepath.WalkDir(cb.rootAbsPath, func(currentWalkPath string, d fs.DirEntry, err error) error {
+		if err != nil {
+			// Report error and attempt to continue if possible, unless it's critical.
+			cb.logger.Printf("%sWarning: Error accessing %s: %v%s\n", colorRed, currentWalkPath, err, colorReset)
+			if d != nil && d.IsDir() { // If it's a directory error, might not be skippable
+				return filepath.SkipDir // Try to skip this problematic directory
+			}
+			return nil // Skip this problematic file entry
 		}
 
+		pathRelToInput, relErr := filepath.Rel(cb.rootAbsPath, currentWalkPath)
+		if relErr != nil {
+			// This should ideally not happen if WalkDir starts from rootAbsPath
+			cb.logger.Printf("%sWarning: Could not make path %s relative to %s: %v%s\n", colorRed, currentWalkPath, cb.rootAbsPath, relErr, colorReset)
+			return nil // Skip this entry
+		}
+		pathRelToInput = filepath.ToSlash(pathRelToInput)
+
+		// Don't process the root directory itself as a "file" or for primary filtering here;
+		// WalkDir handles recursion into it. Filtering applies to its children.
+		if pathRelToInput == "." {
+			return nil // Continue walking
+		}
+
+		if !shouldProcess(pathRelToInput, cb.ignoreMatchers, cb.includeMatchers) {
+			if cb.excludedPathsFile == "" {
+				cb.logger.Printf("%s- %s%s\n", colorRed, pathRelToInput, colorReset)
+			}
+			excludedPaths = append(excludedPaths, pathRelToInput) // Store relative path
+			if d.IsDir() {
+				return filepath.SkipDir // Skip entire directory
+			}
+			return nil // Skip this file
+		}
+
+		// If we reach here, the path is included.
+		if !d.IsDir() {
+			if cb.includedPathsFile == "" {
+				cb.logger.Printf("%s+ %s%s\n", colorGreen, pathRelToInput, colorReset)
+			}
+			includedPaths = append(includedPaths, pathRelToInput) // Store relative path
+
+			fileContent, readErr := os.ReadFile(currentWalkPath)
+			if readErr != nil {
+				cb.logger.Printf("%sWarning: Failed to read file %s: %v%s\n", colorRed, currentWalkPath, readErr, colorReset)
+				// Optionally, add a placeholder to the markdown for unreadable files
+				content.WriteString(fmt.Sprintf("## %s\n", pathRelToInput))
+				content.WriteString(fmt.Sprintf("```\nError reading file: %v\n```\n\n", readErr))
+				return nil // Continue with next file
+			}
+
+			extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(currentWalkPath)), ".")
+			content.WriteString(fmt.Sprintf("## %s\n", pathRelToInput)) // Use relative path for header
+			content.WriteString(fmt.Sprintf("```%s\n", extension))
+			content.Write(fileContent) // Write bytes directly
+			content.WriteString("\n```\n\n")
+		}
 		return nil
 	})
 
-	// Save included paths to file (if filename was provided)
-	if includedPathsFile != "" {
-		err = savePathsToFile(includedPathsFile, includedPaths)
-		if err != nil {
-			return fmt.Errorf("error saving included paths to file: %w", err)
-		}
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("error walking directory %s: %w", cb.rootAbsPath, err)
+	}
+	return content.String(), includedPaths, excludedPaths, nil
+}
+
+func savePathsToFile(filename string, paths []string, logger *log.Logger) error {
+	if len(paths) == 0 {
+		// Optionally, create an empty file or just skip
+		// logger.Printf("No paths to save to %s.", filename)
+		// return os.WriteFile(filename, []byte{}, 0644)
+		return nil // Do nothing if no paths
 	}
 
-	// Save excluded paths to file (if filename was provided)
-	if excludedPathsFile != "" {
-		err = savePathsToFile(excludedPathsFile, excludedPaths)
-		if err != nil {
-			return fmt.Errorf("error saving excluded paths to file: %w", err)
-		}
+	var sb strings.Builder
+	for _, p := range paths {
+		sb.WriteString(p)
+		sb.WriteString("\n")
 	}
 
+	err := os.WriteFile(filename, []byte(sb.String()), 0644)
+	if err == nil {
+		logger.Printf("Paths saved to %s\n", filename)
+	}
 	return err
 }
 
-// shouldProcess determines if a file should be processed based on include and ignore patterns
-func shouldProcess(path string, ignoreList, includeList []*regexp.Regexp) bool {
-	if path == "." {
-		return false
-	}
-
-	if len(ignoreList) > 0 && len(includeList) > 0 {
-		// Both include and ignore patterns were specified, the path must match at least one include pattern and not match any ignore pattern
-		included := false
-		for _, pattern := range includeList {
-			if pattern.MatchString(path) {
-				included = true
-				break
-			}
-		}
-		excluded := false
-		for _, pattern := range ignoreList {
-			if pattern.MatchString(path) {
-				excluded = true
-				break
-			}
-		}
-		return included && !excluded // this behavior can be changed latter to give precedence to includes or excludes
-
-	} else if len(includeList) > 0 {
-		// Only include patterns were specified, the path must match at least one
-		for _, pattern := range includeList {
-			if pattern.MatchString(path) {
-				return true
-			}
-		}
-		return false
-	} else if len(ignoreList) > 0 {
-		// Only ignore patterns were specified, the path must not match any
-		for _, pattern := range ignoreList {
-			if pattern.MatchString(path) {
-				return false // Exclude if it matches any ignore pattern
-			}
-		}
-		return true
-	}
-	return true
-}
-
-// printHelp prints the help message
 func printHelp() {
-	fmt.Println("Usage: go run codemerge.go [options]")
+	fmt.Println("CodeWeaver: Generate Markdown Documentation from Your Codebase.")
+	fmt.Printf("Version: %s, Commit: %s, Date: %s\n\n", version, commit, date)
+	fmt.Println("Usage: codeweaver [options]")
 	fmt.Println("\nOptions:")
 	flag.PrintDefaults()
-}
-
-// savePathsToFile saves a list of paths to a file, one per line
-func savePathsToFile(filename string, paths []string) error {
-	file, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	for _, path := range paths {
-		_, err := fmt.Fprintln(file, path)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	fmt.Println("\nExamples:")
+	fmt.Println("  codeweaver                               # Process current directory, output to codebase.md")
+	fmt.Println("  codeweaver -input my_project -output docs.md")
+	fmt.Println(`  codeweaver -ignore "build/,vendor/" -include "\.go$,\.md$"`)
+	fmt.Println("  codeweaver -clipboard -excluded-paths-file ignored.txt")
+	fmt.Println("\nNotes on patterns:")
+	fmt.Println("  - Patterns are Go regular expressions.")
+	fmt.Println("  - Paths for filtering are relative to the input directory (e.g., \"src/main.go\", not \"./src/main.go\" or \"/path/to/project/src/main.go\").")
+	fmt.Println("  - Use forward slashes '/' in patterns for cross-platform compatibility (e.g., \"data/images/\").")
 }
