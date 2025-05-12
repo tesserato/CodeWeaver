@@ -444,7 +444,7 @@ func printHelp() {
 	fmt.Println("\nOptions:")
 	flag.PrintDefaults()
 	fmt.Println("\nExamples:")
-	fmt.Println("  codeweaver                               # Process current directory, output to codebase.md")
+	fmt.Println("  codeweaver # Process current directory, output to codebase.md")
 	fmt.Println("  codeweaver -input my_project -output docs.md")
 	fmt.Println(`  codeweaver -ignore "build/,vendor/" -include "\.go$,\.md$"`)
 	fmt.Println("  codeweaver -clipboard -excluded-paths-file ignored.txt")
