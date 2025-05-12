@@ -3,3 +3,8 @@ excluded_paths.txt
 included_paths.txt
 dist
 DRAFT.MD
+out.md
+exc.txt
+inc.txt
+excluded.log
+included.log
