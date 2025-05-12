@@ -102,9 +102,7 @@ github.com/tesserato/CodeWeaver/main.go:373.28,375.4 1 1
 github.com/tesserato/CodeWeaver/main.go:377.3,377.76 1 1
 github.com/tesserato/CodeWeaver/main.go:377.76,378.34 1 1
 github.com/tesserato/CodeWeaver/main.go:378.34,380.5 1 1
-github.com/tesserato/CodeWeaver/main.go:381.4,382.17 2 1
-github.com/tesserato/CodeWeaver/main.go:382.17,384.5 1 1
-github.com/tesserato/CodeWeaver/main.go:385.4,385.14 1 1
+github.com/tesserato/CodeWeaver/main.go:381.4,385.14 2 1
 github.com/tesserato/CodeWeaver/main.go:389.3,389.17 1 1
 github.com/tesserato/CodeWeaver/main.go:389.17,390.34 1 1
 github.com/tesserato/CodeWeaver/main.go:390.34,392.5 1 1
