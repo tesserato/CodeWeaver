@@ -3,7 +3,7 @@ package main
 import (
 	"flag" // For testing parseFlags
 	"fmt"
-	"io/ioutil" // For ioutil.Discard, TempFile, etc.
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -32,7 +32,7 @@ func normalizeNewlines(s string) string {
 
 func createTestFS(t *testing.T) (string, func()) {
 	t.Helper()
-	rootDir, err := ioutil.TempDir("", "codeweaver_test_fs_")
+	rootDir, err := os.MkdirTemp("", "codeweaver_test_fs_")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -72,7 +72,7 @@ func createTestFS(t *testing.T) (string, func()) {
 				os.RemoveAll(rootDir)
 				t.Fatalf("Failed to create parent dir %s for file %s: %v", parentDir, absPath, err)
 			}
-			if err := ioutil.WriteFile(absPath, []byte(content), 0644); err != nil {
+			if err := os.WriteFile(absPath, []byte(content), 0644); err != nil {
 				os.RemoveAll(rootDir)
 				t.Fatalf("Failed to write file %s: %v", absPath, err)
 			}
@@ -147,7 +147,7 @@ func TestParseFlags(t *testing.T) {
 	runParse := func(args []string) (*config, error) {
 		// Create a new flag set for testing to avoid interfering with global state
 		testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
-		testFlags.SetOutput(ioutil.Discard) // Suppress flag errors during testing
+		testFlags.SetOutput(io.Discard) // Suppress flag errors during testing
 
 		cfg := &config{}
 		originalArgs := os.Args                   // Backup original args
@@ -298,7 +298,7 @@ func TestParseFlags(t *testing.T) {
 	})
 
 	t.Run("Error_InputIsFile", func(t *testing.T) {
-		tmpFile, err := ioutil.TempFile("", "codeweaver_test_file_*.txt")
+		tmpFile, err := os.CreateTemp("", "codeweaver_test_file_*.txt")
 		if err != nil {
 			t.Fatalf("Failed to create temp file: %v", err)
 		}
@@ -317,7 +317,7 @@ func TestParseFlags(t *testing.T) {
 }
 
 func TestCompileRegexPatterns(t *testing.T) {
-	testLogger := log.New(ioutil.Discard, "", 0)
+	testLogger := log.New(io.Discard, "", 0)
 
 	t.Run("ValidPatterns", func(t *testing.T) {
 		patterns := []string{"\\.go$", "^src/"}
@@ -533,7 +533,7 @@ func TestContentBuilder(t *testing.T) {
 	rootDir, cleanup := createTestFS(t)
 	defer cleanup()
 
-	testLogger := log.New(ioutil.Discard, "", 0) // Suppress log output during tests
+	testLogger := log.New(io.Discard, "", 0) // Suppress log output during tests
 
 	testCases := []struct {
 		name                  string
@@ -598,22 +598,21 @@ func TestContentBuilder(t *testing.T) {
 			expectedContentSubstr: "",
 			expectedIncludedPaths: []string{},
 			expectedExcludedPaths: []string{
-				".git", "README.md", "build", "data", "docs", "file1.txt", "node_modules", "other.log", "script.go", 
+				".git", "README.md", "build", "data", "docs", "file1.txt", "node_modules", "other.log", "script.go",
 			},
 		},
 		// --- New Case: Ignore takes precedence over include ---
 		{
 			name:                  "IgnoreLog_IncludeAll",
-			// ignoreMatchers:        []*regexp.Regexp{mustCompileRegex(`\.log$`)}, // Original
-			ignoreMatchers:        []*regexp.Regexp{mustCompileRegex(`.*\.log$`)}, // Diagnostic Change: Added .*
-			includeMatchers:       []*regexp.Regexp{mustCompileRegex(".")},    // Include everything not ignored
-			expectedContentSubstr: "## README.md",                          // Check some non-log file exists
-			expectedIncludedPaths: []string{ // All except logs
-				".git/HEAD", "README.md", "build/output.exe", "data/config.yaml",
-				"data/image.png", "docs/sub_docs/file_in_sub.txt", "file1.txt",
-				"node_modules/dep/package.json", "script.go",
+			ignoreMatchers:        []*regexp.Regexp{mustCompileRegex(`\.log$`)}, // Ensure this is the original pattern
+			includeMatchers:       []*regexp.Regexp{mustCompileRegex(".")},      // Include everything not ignored
+			expectedContentSubstr: "## README.md",                               // Check some non-log file exists
+			expectedIncludedPaths: []string{ // All except other.log
+				".git/HEAD", "README.md", "build/output.exe", "build/tmp/log.txt", // <-- CORRECT: build/tmp/log.txt IS included
+				"data/config.yaml", "data/image.png", "docs/sub_docs/file_in_sub.txt",
+				"file1.txt", "node_modules/dep/package.json", "script.go",
 			},
-			expectedExcludedPaths: []string{"build/tmp/log.txt", "other.log"},
+			expectedExcludedPaths: []string{"other.log"}, // <-- CORRECT: Only other.log is excluded by the pattern
 		},
 	}
 
@@ -646,11 +645,11 @@ func TestContentBuilder(t *testing.T) {
 		})
 	}
 
-	// --- Error Case ---	
+	// --- Error Case ---
 	t.Run("Error_InputNotExist", func(t *testing.T) {
 		nonExistentPath := filepath.Join(os.TempDir(), "codeweaver_non_existent_dir_content_abc123")
 		os.Remove(nonExistentPath) // Ensure it doesn't exist first
-		builder := newContentBuilder(nonExistentPath,"", "", nil, nil, testLogger)
+		builder := newContentBuilder(nonExistentPath, "", "", nil, nil, testLogger)
 		_, _, _, err := builder.buildContentString() // Should fail on WalkDir
 		if err == nil {
 			t.Fatal("Expected error for non-existent input path, got nil")
@@ -658,7 +657,7 @@ func TestContentBuilder(t *testing.T) {
 		// Fallback: Check if the error message contains the non-existent path string,
 		// as os.ErrNotExist checking seems unreliable across platforms/versions here.
 		if !strings.Contains(err.Error(), nonExistentPath) {
-			 t.Errorf("Expected error message related to path '%s', but got: %v", nonExistentPath, err)
+			t.Errorf("Expected error message related to path '%s', but got: %v", nonExistentPath, err)
 		}
 	})
 
@@ -693,10 +692,10 @@ func TestContentBuilder(t *testing.T) {
 }
 
 func TestSavePathsToFile(t *testing.T) {
-	testLogger := log.New(ioutil.Discard, "", 0)
+	testLogger := log.New(io.Discard, "", 0)
 
 	t.Run("StandardSave", func(t *testing.T) {
-		tmpFile, err := ioutil.TempFile("", "test_paths_*.txt")
+		tmpFile, err := os.CreateTemp("", "test_paths_*.txt")
 		if err != nil {
 			t.Fatalf("Failed to create temp file: %v", err)
 		}
@@ -712,7 +711,7 @@ func TestSavePathsToFile(t *testing.T) {
 			t.Fatalf("savePathsToFile failed: %v", err)
 		}
 
-		contentBytes, err := ioutil.ReadFile(tmpFilePath)
+		contentBytes, err := os.ReadFile(tmpFilePath)
 		if err != nil {
 			t.Fatalf("Failed to read back saved paths file: %v", err)
 		}
@@ -736,7 +735,7 @@ func TestSavePathsToFile(t *testing.T) {
 	})
 
 	t.Run("Error_PathIsDirectory", func(t *testing.T) {
-		tmpDir, err := ioutil.TempDir("", "test_save_dir_")
+		tmpDir, err := os.MkdirTemp("", "test_save_dir_")
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
@@ -774,7 +773,7 @@ func TestPrintHelp(t *testing.T) {
 
 	// Close the write end and read from the read end
 	w.Close()
-	outBytes, _ := ioutil.ReadAll(r)
+	outBytes, _ := io.ReadAll(r)
 	output := string(outBytes)
 
 	// Basic check for some expected content
