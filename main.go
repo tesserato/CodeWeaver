@@ -149,13 +149,14 @@ func parseFlags() (*config, error) {
 func setupLogging(cfg *config) *log.Logger {
 	logger := log.New(os.Stdout, "", 0)
 	logger.Println("Starting CodeWeaver...")
-	logger.Println("Input directory:", cfg.inputDirAbs)
-	logger.Println("Output file:", cfg.outputFile)
+	// Use filepath.ToSlash to ensure consistent path separators in logs
+	logger.Println("Input directory:", filepath.ToSlash(cfg.inputDirAbs))
+	logger.Println("Output file:", filepath.ToSlash(cfg.outputFile))
 	if cfg.includedPathsFile != "" {
-		logger.Println("Included paths will be saved to:", cfg.includedPathsFile)
+		logger.Println("Included paths will be saved to:", filepath.ToSlash(cfg.includedPathsFile))
 	}
 	if cfg.excludedPathsFile != "" {
-		logger.Println("Excluded paths will be saved to:", cfg.excludedPathsFile)
+		logger.Println("Excluded paths will be saved to:", filepath.ToSlash(cfg.excludedPathsFile))
 	}
 	if cfg.instruction != "" {
 		logger.Println("Instruction text provided.")
@@ -341,15 +342,15 @@ func (tb *treeBuilder) printEntryLine(entry fs.DirEntry, depth int, isLast bool)
 	var prefix strings.Builder
 	for i := 0; i < depth; i++ {
 		if tb.depthOpen[i] {
-			prefix.WriteString("│  ")
+			prefix.WriteString("│   ")
 		} else {
-			prefix.WriteString("   ")
+			prefix.WriteString("    ")
 		}
 	}
 	if isLast {
-		prefix.WriteString("└─ ")
+		prefix.WriteString("└── ")
 	} else {
-		prefix.WriteString("├─ ")
+		prefix.WriteString("├── ")
 	}
 	tb.output.WriteString(prefix.String() + entry.Name() + "\n")
 }
@@ -494,21 +495,25 @@ func shouldProcess(pathRelToInput string, ignoreMatchers, includeMatchers []*reg
 }
 
 func writeOutput(cfg *config, markdownContent string, includedPaths, excludedPaths []string, logger *log.Logger) error {
-	logger.Printf("Writing output to %s...", cfg.outputFile)
+	outputFileSlash := filepath.ToSlash(cfg.outputFile)
+	logger.Printf("Writing output to %s...", outputFileSlash)
 	err := os.WriteFile(cfg.outputFile, []byte(markdownContent), 0644)
 	if err != nil {
-		logger.Printf("%sError writing to output file %s: %v%s", colorRed, cfg.outputFile, err, colorReset)
+		logger.Printf("%sError writing to output file %s: %v%s", colorRed, outputFileSlash, err, colorReset)
 		return fmt.Errorf("writing output file %s: %w", cfg.outputFile, err)
 	}
-	logger.Printf("Markdown content written to %s", cfg.outputFile)
+	logger.Printf("Markdown content written to %s", outputFileSlash)
+
 	if cfg.includedPathsFile != "" {
+		includedFileSlash := filepath.ToSlash(cfg.includedPathsFile)
 		if err := savePathsToFile(cfg.includedPathsFile, includedPaths, logger); err != nil { // Pass `includedPaths` from generateMarkdown
-			logger.Printf("%sWarning: Error saving included paths to %s: %v%s", colorRed, cfg.includedPathsFile, err, colorReset)
+			logger.Printf("%sWarning: Error saving included paths to %s: %v%s", colorRed, includedFileSlash, err, colorReset)
 		}
 	}
 	if cfg.excludedPathsFile != "" {
+		excludedFileSlash := filepath.ToSlash(cfg.excludedPathsFile)
 		if err := savePathsToFile(cfg.excludedPathsFile, excludedPaths, logger); err != nil { // Pass `excludedPaths` from generateMarkdown
-			logger.Printf("%sWarning: Error saving excluded paths to %s: %v%s", colorRed, cfg.excludedPathsFile, err, colorReset)
+			logger.Printf("%sWarning: Error saving excluded paths to %s: %v%s", colorRed, excludedFileSlash, err, colorReset)
 		}
 	}
 	if cfg.addToClipboard {
@@ -525,7 +530,7 @@ func writeOutput(cfg *config, markdownContent string, includedPaths, excludedPat
 
 func savePathsToFile(filename string, paths []string, logger *log.Logger) error {
 	if len(paths) == 0 {
-		logger.Printf("No paths to save to %s.", filename)
+		logger.Printf("No paths to save to %s.", filepath.ToSlash(filename))
 		return nil
 	}
 	sort.Strings(paths) // Sort for consistent output
@@ -536,9 +541,9 @@ func savePathsToFile(filename string, paths []string, logger *log.Logger) error 
 	}
 	err := os.WriteFile(filename, []byte(sb.String()), 0644)
 	if err == nil {
-		logger.Printf("Paths saved to %s", filename)
+		logger.Printf("Paths saved to %s", filepath.ToSlash(filename))
 	} else {
-		return fmt.Errorf("writing paths file %s: %w", filename, err)
+		return fmt.Errorf("writing paths file %s: %w", filepath.ToSlash(filename), err)
 	}
 	return nil
 }

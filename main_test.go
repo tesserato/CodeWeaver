@@ -138,13 +138,13 @@ func runMainLogic(args []string, outputDir string) (string, error) {
 	}
 
 	testRunLogger.Println("Starting CodeWeaver...")
-	testRunLogger.Println("Input directory:", cfg.inputDirAbs)
-	testRunLogger.Println("Output file:", filepath.Join(outputDir, cfg.outputFile))
+	testRunLogger.Println("Input directory:", filepath.ToSlash(cfg.inputDirAbs))
+	testRunLogger.Println("Output file:", filepath.ToSlash(filepath.Join(outputDir, cfg.outputFile)))
 	if cfg.includedPathsFile != "" {
-		testRunLogger.Println("Included paths will be saved to:", filepath.Join(outputDir, cfg.includedPathsFile))
+		testRunLogger.Println("Included paths will be saved to:", filepath.ToSlash(filepath.Join(outputDir, cfg.includedPathsFile)))
 	}
 	if cfg.excludedPathsFile != "" {
-		testRunLogger.Println("Excluded paths will be saved to:", filepath.Join(outputDir, cfg.excludedPathsFile))
+		testRunLogger.Println("Excluded paths will be saved to:", filepath.ToSlash(filepath.Join(outputDir, cfg.excludedPathsFile)))
 	}
 	if cfg.instruction != "" {
 		testRunLogger.Println("Instruction text provided.")
@@ -392,17 +392,17 @@ func TestTreeBuilder(t *testing.T) {
 				"script.go",
 			},
 			expectedTreeLines: []string{
-				"├─ .git", "│  └─ HEAD",
-				"├─ README.md",
-				"├─ build", "│  ├─ output.exe", "│  └─ tmp", "│     └─ log.txt",
-				"├─ data", "│  ├─ config.yaml", "│  └─ image.png",
-				"├─ docs", "│  └─ sub_docs", "│     └─ file_in_sub.txt",
-				"├─ empty_dir",
-				"├─ empty_file.txt",
-				"├─ file1.txt",
-				"├─ node_modules", "│  └─ dep", "│     └─ package.json",
-				"├─ other.log",
-				"└─ script.go",
+				"├── .git", "│   └── HEAD",
+				"├── README.md",
+				"├── build", "│   ├── output.exe", "│   └── tmp", "│       └── log.txt",
+				"├── data", "│   ├── config.yaml", "│   └── image.png",
+				"├── docs", "│   └── sub_docs", "│       └── file_in_sub.txt",
+				"├── empty_dir",
+				"├── empty_file.txt",
+				"├── file1.txt",
+				"├── node_modules", "│   └── dep", "│       └── package.json",
+				"├── other.log",
+				"└── script.go",
 			},
 		},
 		{
@@ -414,8 +414,8 @@ func TestTreeBuilder(t *testing.T) {
 				// but treeBuilder logic ensures parent dirs of processed files are shown.
 			},
 			expectedTreeLines: []string{
-				"├─ README.md",
-				"└─ script.go",
+				"├── README.md",
+				"└── script.go",
 			},
 		},
 		{
@@ -425,8 +425,8 @@ func TestTreeBuilder(t *testing.T) {
 				"data", "data/config.yaml", // file + its parent dir
 			},
 			expectedTreeLines: []string{
-				"├─ data", "│  └─ config.yaml",
-				"└─ docs", "   └─ sub_docs", "      └─ file_in_sub.txt",
+				"├── data", "│   └── config.yaml",
+				"└── docs", "    └── sub_docs", "        └── file_in_sub.txt",
 			},
 		},
 		{
@@ -435,7 +435,7 @@ func TestTreeBuilder(t *testing.T) {
 				"empty_dir",
 			},
 			expectedTreeLines: []string{
-				"└─ empty_dir",
+				"└── empty_dir",
 			},
 		},
 		{
@@ -699,16 +699,16 @@ func TestMainExecutionFlows(t *testing.T) {
 			t.Fatalf("Run failed: %v. Log:\n%s", err, logOutput)
 		}
 
-		expectedOutputPath := filepath.Join(testOutputDir, outputFileName)
+		expectedOutputPath := filepath.ToSlash(filepath.Join(testOutputDir, outputFileName))
 		if !strings.Contains(logOutput, "Markdown content written to "+expectedOutputPath) {
 			t.Errorf("Missing 'Markdown content written...' log. Expected path '%s'. Got:\n%s", expectedOutputPath, logOutput)
 		}
-		if _, statErr := os.Stat(expectedOutputPath); statErr != nil {
+		if _, statErr := os.Stat(filepath.Join(testOutputDir, outputFileName)); statErr != nil {
 			t.Errorf("Expected output file '%s' to exist, stat failed: %v", expectedOutputPath, statErr)
 		}
 
 		// Read the generated markdown and verify tree and content parts
-		generatedMdBytes, readErr := os.ReadFile(expectedOutputPath)
+		generatedMdBytes, readErr := os.ReadFile(filepath.Join(testOutputDir, outputFileName))
 		if readErr != nil {
 			t.Fatalf("Failed to read generated markdown file: %v", readErr)
 		}
@@ -718,13 +718,13 @@ func TestMainExecutionFlows(t *testing.T) {
 		if !strings.Contains(generatedMd, "# Tree View:") {
 			t.Errorf("Generated markdown missing Tree View header.")
 		}
-		if strings.Contains(generatedMd, "├─ .git") {
+		if strings.Contains(generatedMd, "├── .git") {
 			t.Errorf("Generated markdown tree should NOT contain ignored entry '.git'. Output:\n%s", generatedMd)
 		}
-		if !strings.Contains(generatedMd, "├─ build") { // Check for a non-ignored directory
+		if !strings.Contains(generatedMd, "├── build") { // Check for a non-ignored directory
 			t.Errorf("Generated markdown tree missing expected entry 'build'. Output:\n%s", generatedMd)
 		}
-		if !strings.Contains(generatedMd, "└─ script.go") { // Example tree entry
+		if !strings.Contains(generatedMd, "└── script.go") { // Example tree entry
 			t.Errorf("Generated markdown tree missing expected entry 'script.go'.")
 		}
 
