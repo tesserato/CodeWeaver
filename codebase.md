@@ -1,23 +1,31 @@
+**Before generating any code, state the features added and the features removed (hopefully none) by the code you generated - when in doubt, output this part and ask for confirmation before generating code!**
+
+1. When implementing the requested changes, generate the complete modified files for easy copy and paste;
+2. Change the code as little as possible;
+3. Do not Introduce regressions or arbitrary simplifications: keep comments, checks, asserts, etc;
+4. Generate professional and standard code
+5. Do not add ephemerous comments, like Changed, Fix Start, Removed, etc. Always generate a final, professional version of the codebase;
+6. Do not add the path at the top of the file.
+
 # Tree View:
 ```
 .
-├─ build_and_run.ps1
-├─ build_and_show_help.ps1
-├─ coverage.out
-├─ go.mod
-├─ go.sum
-├─ goreleaser.yaml
-├─ LICENSE
-├─ main.go
-├─ main_test.go
-├─ README.md
-└─ run_tests.ps1
+├── build_and_run.ps1
+├── build_and_show_help.ps1
+├── go.mod
+├── goreleaser.yaml
+├── LICENSE
+├── main.go
+├── main_test.go
+├── README.md
+└── run_tests.ps1
 
 ```
 
 # Content:
 
 ## LICENSE
+
 ```
 MIT License
 
@@ -45,7 +53,8 @@ SOFTWARE.
 
 
 ## README.md
-```md
+
+````md
 # CodeWeaver: Generate Markdown Documentation from Your Codebase
 
 [![Go](https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
@@ -274,20 +283,33 @@ This section lists tools with similar or overlapping functionality.
 **VSCode Extensions**
 
 *   **Codebase to Markdown:** ([https://marketplace.visualstudio.com/items?itemName=DVYIO.combine-open-files](https://marketplace.visualstudio.com/items?itemName=DVYIO.combine-open-files))
-```
+````
 
 
 ## build_and_run.ps1
+
 ```ps1
 go build .
-
 git describe --tags --abbrev=0
-# ./CodeWeaver -h
-./CodeWeaver -clipboard -ignore="\.git.*,.+\.exe,codebase.md,excluded_paths.txt,DRAFT\.md,coverage$"
+
+$instruction = @"
+**Before generating any code, state the features added and the features removed (hopefully none) by the code you generated - when in doubt, output this part and ask for confirmation before generating code!**
+
+1. When implementing the requested changes, generate the complete modified files for easy copy and paste;
+2. Change the code as little as possible;
+3. Do not Introduce regressions or arbitrary simplifications: keep comments, checks, asserts, etc;
+4. Generate professional and standard code
+5. Do not add ephemerous comments, like `Changed`, `Fix Start`, `Removed`, etc. Always generate a final, professional version of the codebase;
+6. Do not add the path at the top of the file.
+"@
+
+
+./CodeWeaver -clipboard -instruction $instruction -ignore="\.git.*,.+\.exe,codebase.md,excluded_paths.txt,DRAFT\.md,coverage.*,go\.sum"
 ```
 
 
 ## build_and_show_help.ps1
+
 ```ps1
 go build .
 ./CodeWeaver -h
@@ -299,169 +321,8 @@ go build .
 ```
 
 
-## coverage.out
-```out
-mode: set
-github.com/tesserato/CodeWeaver/main.go:44.13,48.16 2 0
-github.com/tesserato/CodeWeaver/main.go:48.16,50.28 2 0
-github.com/tesserato/CodeWeaver/main.go:50.28,52.4 1 0
-github.com/tesserato/CodeWeaver/main.go:53.3,53.13 1 0
-github.com/tesserato/CodeWeaver/main.go:56.2,56.34 1 0
-github.com/tesserato/CodeWeaver/main.go:56.34,58.116 2 0
-github.com/tesserato/CodeWeaver/main.go:58.116,61.4 2 0
-github.com/tesserato/CodeWeaver/main.go:64.2,66.16 3 0
-github.com/tesserato/CodeWeaver/main.go:66.16,68.3 1 0
-github.com/tesserato/CodeWeaver/main.go:71.2,72.16 2 0
-github.com/tesserato/CodeWeaver/main.go:72.16,74.3 1 0
-github.com/tesserato/CodeWeaver/main.go:76.2,77.16 2 0
-github.com/tesserato/CodeWeaver/main.go:77.16,79.3 1 0
-github.com/tesserato/CodeWeaver/main.go:81.2,81.80 1 0
-github.com/tesserato/CodeWeaver/main.go:84.38,86.2 1 0
-github.com/tesserato/CodeWeaver/main.go:100.36,113.22 10 1
-github.com/tesserato/CodeWeaver/main.go:113.22,113.49 2 0
-github.com/tesserato/CodeWeaver/main.go:114.2,115.16 2 1
-github.com/tesserato/CodeWeaver/main.go:115.16,117.3 1 0
-github.com/tesserato/CodeWeaver/main.go:118.2,118.21 1 1
-github.com/tesserato/CodeWeaver/main.go:118.21,120.3 1 0
-github.com/tesserato/CodeWeaver/main.go:122.2,124.26 3 1
-github.com/tesserato/CodeWeaver/main.go:124.26,126.3 1 0
-github.com/tesserato/CodeWeaver/main.go:127.2,128.26 2 1
-github.com/tesserato/CodeWeaver/main.go:128.26,129.35 1 1
-github.com/tesserato/CodeWeaver/main.go:129.35,131.4 1 1
-github.com/tesserato/CodeWeaver/main.go:132.3,132.89 1 0
-github.com/tesserato/CodeWeaver/main.go:134.2,134.19 1 1
-github.com/tesserato/CodeWeaver/main.go:134.19,136.3 1 1
-github.com/tesserato/CodeWeaver/main.go:137.2,137.22 1 1
-github.com/tesserato/CodeWeaver/main.go:137.22,139.3 1 1
-github.com/tesserato/CodeWeaver/main.go:140.2,140.23 1 1
-github.com/tesserato/CodeWeaver/main.go:140.23,142.3 1 1
-github.com/tesserato/CodeWeaver/main.go:143.2,143.17 1 1
-github.com/tesserato/CodeWeaver/main.go:146.44,151.33 5 0
-github.com/tesserato/CodeWeaver/main.go:151.33,153.3 1 0
-github.com/tesserato/CodeWeaver/main.go:154.2,154.33 1 0
-github.com/tesserato/CodeWeaver/main.go:154.33,156.3 1 0
-github.com/tesserato/CodeWeaver/main.go:157.2,157.24 1 0
-github.com/tesserato/CodeWeaver/main.go:157.24,159.3 1 0
-github.com/tesserato/CodeWeaver/main.go:160.2,161.15 2 0
-github.com/tesserato/CodeWeaver/main.go:164.101,167.16 3 1
-github.com/tesserato/CodeWeaver/main.go:167.16,169.3 1 0
-github.com/tesserato/CodeWeaver/main.go:170.2,172.16 3 1
-github.com/tesserato/CodeWeaver/main.go:172.16,174.3 1 0
-github.com/tesserato/CodeWeaver/main.go:175.2,176.8 2 1
-github.com/tesserato/CodeWeaver/main.go:179.110,180.24 1 1
-github.com/tesserato/CodeWeaver/main.go:180.24,183.3 2 1
-github.com/tesserato/CodeWeaver/main.go:184.2,186.29 3 1
-github.com/tesserato/CodeWeaver/main.go:186.29,188.20 2 1
-github.com/tesserato/CodeWeaver/main.go:188.20,189.12 1 0
-github.com/tesserato/CodeWeaver/main.go:191.3,193.20 3 1
-github.com/tesserato/CodeWeaver/main.go:193.20,195.4 1 1
-github.com/tesserato/CodeWeaver/main.go:196.3,197.20 2 1
-github.com/tesserato/CodeWeaver/main.go:199.2,199.17 1 1
-github.com/tesserato/CodeWeaver/main.go:199.17,202.3 2 0
-github.com/tesserato/CodeWeaver/main.go:203.2,203.22 1 1
-github.com/tesserato/CodeWeaver/main.go:211.98,222.16 5 1
-github.com/tesserato/CodeWeaver/main.go:222.16,224.3 1 0
-github.com/tesserato/CodeWeaver/main.go:227.2,232.35 5 1
-github.com/tesserato/CodeWeaver/main.go:232.35,234.3 1 1
-github.com/tesserato/CodeWeaver/main.go:236.2,238.16 3 1
-github.com/tesserato/CodeWeaver/main.go:238.16,240.3 1 0
-github.com/tesserato/CodeWeaver/main.go:241.2,250.66 6 1
-github.com/tesserato/CodeWeaver/main.go:263.93,269.2 1 1
-github.com/tesserato/CodeWeaver/main.go:271.58,274.2 2 1
-github.com/tesserato/CodeWeaver/main.go:276.83,278.16 2 1
-github.com/tesserato/CodeWeaver/main.go:278.16,280.3 1 0
-github.com/tesserato/CodeWeaver/main.go:282.2,283.32 2 1
-github.com/tesserato/CodeWeaver/main.go:283.32,286.20 3 1
-github.com/tesserato/CodeWeaver/main.go:286.20,288.4 1 0
-github.com/tesserato/CodeWeaver/main.go:293.3,294.74 2 1
-github.com/tesserato/CodeWeaver/main.go:294.74,296.4 1 1
-github.com/tesserato/CodeWeaver/main.go:296.9,296.27 1 1
-github.com/tesserato/CodeWeaver/main.go:296.27,298.52 2 1
-github.com/tesserato/CodeWeaver/main.go:298.52,299.56 1 1
-github.com/tesserato/CodeWeaver/main.go:299.56,301.11 2 1
-github.com/tesserato/CodeWeaver/main.go:306.3,306.20 1 1
-github.com/tesserato/CodeWeaver/main.go:306.20,308.4 1 1
-github.com/tesserato/CodeWeaver/main.go:311.2,311.53 1 1
-github.com/tesserato/CodeWeaver/main.go:311.53,313.3 1 1
-github.com/tesserato/CodeWeaver/main.go:315.2,315.43 1 1
-github.com/tesserato/CodeWeaver/main.go:315.43,318.20 3 1
-github.com/tesserato/CodeWeaver/main.go:318.20,320.102 2 1
-github.com/tesserato/CodeWeaver/main.go:320.102,322.5 1 0
-github.com/tesserato/CodeWeaver/main.go:325.2,325.12 1 1
-github.com/tesserato/CodeWeaver/main.go:328.82,330.29 2 1
-github.com/tesserato/CodeWeaver/main.go:330.29,331.22 1 1
-github.com/tesserato/CodeWeaver/main.go:331.22,333.4 1 1
-github.com/tesserato/CodeWeaver/main.go:333.9,335.4 1 1
-github.com/tesserato/CodeWeaver/main.go:337.2,337.12 1 1
-github.com/tesserato/CodeWeaver/main.go:337.12,339.3 1 1
-github.com/tesserato/CodeWeaver/main.go:339.8,341.3 1 1
-github.com/tesserato/CodeWeaver/main.go:342.2,342.62 1 1
-github.com/tesserato/CodeWeaver/main.go:345.73,347.16 2 1
-github.com/tesserato/CodeWeaver/main.go:347.16,349.3 1 0
-github.com/tesserato/CodeWeaver/main.go:350.2,350.46 1 1
-github.com/tesserato/CodeWeaver/main.go:361.168,363.2 1 1
-github.com/tesserato/CodeWeaver/main.go:371.89,379.111 4 1
-github.com/tesserato/CodeWeaver/main.go:379.111,380.21 1 1
-github.com/tesserato/CodeWeaver/main.go:380.21,382.69 2 0
-github.com/tesserato/CodeWeaver/main.go:382.69,384.5 1 0
-github.com/tesserato/CodeWeaver/main.go:385.4,385.18 1 0
-github.com/tesserato/CodeWeaver/main.go:387.3,388.20 2 1
-github.com/tesserato/CodeWeaver/main.go:388.20,391.4 2 0
-github.com/tesserato/CodeWeaver/main.go:392.3,393.28 2 1
-github.com/tesserato/CodeWeaver/main.go:393.28,395.4 1 1
-github.com/tesserato/CodeWeaver/main.go:397.3,397.76 1 1
-github.com/tesserato/CodeWeaver/main.go:397.76,399.34 1 1
-github.com/tesserato/CodeWeaver/main.go:399.34,401.5 1 1
-github.com/tesserato/CodeWeaver/main.go:402.4,403.14 2 1
-github.com/tesserato/CodeWeaver/main.go:407.3,409.33 2 1
-github.com/tesserato/CodeWeaver/main.go:409.33,411.4 1 1
-github.com/tesserato/CodeWeaver/main.go:414.3,414.16 1 1
-github.com/tesserato/CodeWeaver/main.go:414.16,416.4 1 1
-github.com/tesserato/CodeWeaver/main.go:419.3,420.21 2 1
-github.com/tesserato/CodeWeaver/main.go:420.21,424.4 3 0
-github.com/tesserato/CodeWeaver/main.go:426.3,426.28 1 1
-github.com/tesserato/CodeWeaver/main.go:426.28,429.4 1 1
-github.com/tesserato/CodeWeaver/main.go:432.3,437.13 6 1
-github.com/tesserato/CodeWeaver/main.go:440.2,440.20 1 1
-github.com/tesserato/CodeWeaver/main.go:440.20,442.3 1 0
-github.com/tesserato/CodeWeaver/main.go:443.2,443.73 1 1
-github.com/tesserato/CodeWeaver/main.go:446.98,447.41 1 1
-github.com/tesserato/CodeWeaver/main.go:447.41,448.60 1 1
-github.com/tesserato/CodeWeaver/main.go:448.60,450.4 1 1
-github.com/tesserato/CodeWeaver/main.go:452.2,452.30 1 1
-github.com/tesserato/CodeWeaver/main.go:452.30,454.43 2 1
-github.com/tesserato/CodeWeaver/main.go:454.43,455.61 1 1
-github.com/tesserato/CodeWeaver/main.go:455.61,457.10 2 1
-github.com/tesserato/CodeWeaver/main.go:460.3,460.22 1 1
-github.com/tesserato/CodeWeaver/main.go:460.22,462.4 1 1
-github.com/tesserato/CodeWeaver/main.go:464.2,464.13 1 1
-github.com/tesserato/CodeWeaver/main.go:467.120,470.16 3 1
-github.com/tesserato/CodeWeaver/main.go:470.16,473.3 2 0
-github.com/tesserato/CodeWeaver/main.go:474.2,475.33 2 1
-github.com/tesserato/CodeWeaver/main.go:475.33,476.87 1 1
-github.com/tesserato/CodeWeaver/main.go:476.87,478.4 1 0
-github.com/tesserato/CodeWeaver/main.go:480.2,480.33 1 1
-github.com/tesserato/CodeWeaver/main.go:480.33,481.87 1 1
-github.com/tesserato/CodeWeaver/main.go:481.87,483.4 1 0
-github.com/tesserato/CodeWeaver/main.go:485.2,485.24 1 1
-github.com/tesserato/CodeWeaver/main.go:485.24,487.42 2 0
-github.com/tesserato/CodeWeaver/main.go:487.42,489.4 1 0
-github.com/tesserato/CodeWeaver/main.go:489.9,492.4 2 0
-github.com/tesserato/CodeWeaver/main.go:494.2,494.12 1 1
-github.com/tesserato/CodeWeaver/main.go:497.81,498.21 1 1
-github.com/tesserato/CodeWeaver/main.go:498.21,501.3 2 0
-github.com/tesserato/CodeWeaver/main.go:502.2,504.26 3 1
-github.com/tesserato/CodeWeaver/main.go:504.26,507.3 2 1
-github.com/tesserato/CodeWeaver/main.go:508.2,509.16 2 1
-github.com/tesserato/CodeWeaver/main.go:509.16,511.3 1 1
-github.com/tesserato/CodeWeaver/main.go:511.8,513.3 1 0
-github.com/tesserato/CodeWeaver/main.go:514.2,514.12 1 1
-github.com/tesserato/CodeWeaver/main.go:517.18,533.2 15 0
-
-```
-
-
 ## go.mod
+
 ```mod
 module github.com/tesserato/CodeWeaver
 
@@ -479,62 +340,8 @@ require (
 ```
 
 
-## go.sum
-```sum
-github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
-github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
-golang.design/x/clipboard v0.7.0 h1:4Je8M/ys9AJumVnl8m+rZnIvstSnYj1fvzqYrU3TXvo=
-golang.design/x/clipboard v0.7.0/go.mod h1:PQIvqYO9GP29yINEfsEn5zSQKAz3UgXmZKzDA6dnq2E=
-golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
-golang.org/x/crypto v0.0.0-20190510104115-cbcb75029529/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
-golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
-golang.org/x/exp v0.0.0-20190731235908-ec7cb31e5a56 h1:estk1glOnSVeJ9tdEZZc5mAMDZk5lNJNyJ6DvrBkTEU=
-golang.org/x/exp v0.0.0-20190731235908-ec7cb31e5a56/go.mod h1:JhuoJpWY28nO4Vef9tZUw9qufEGTyX1+7lmHxV5q5G4=
-golang.org/x/image v0.0.0-20190227222117-0694c2d4d067/go.mod h1:kZ7UVZpmo3dzQBMxlp+ypCbDeSB+sBbTgSJuh5dn5js=
-golang.org/x/image v0.6.0 h1:bR8b5okrPI3g/gyZakLZHeWxAR8Dn5CyxXv1hLH5g/4=
-golang.org/x/image v0.6.0/go.mod h1:MXLdDR43H7cDJq5GEGXEVeeNhPgi+YYEQ2pC1byI1x0=
-golang.org/x/mobile v0.0.0-20190312151609-d3739f865fa6/go.mod h1:z+o9i4GpDbdi3rU15maQ/Ox0txvL9dWGYEHz965HBQE=
-golang.org/x/mobile v0.0.0-20230301163155-e0f57694e12c h1:Gk61ECugwEHL6IiyyNLXNzmu8XslmRP2dS0xjIYhbb4=
-golang.org/x/mobile v0.0.0-20230301163155-e0f57694e12c/go.mod h1:aAjjkJNdrh3PMckS4B10TGS2nag27cbKR1y2BpUxsiY=
-golang.org/x/mod v0.1.0/go.mod h1:0QHyrYULN0/3qlju5TqG8bIK38QM8yzMo5ekMj3DlcY=
-golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4/go.mod h1:jJ57K6gSWd91VN4djpZkiMVwK6gcyfeH4XE8wZrZaV4=
-golang.org/x/mod v0.8.0/go.mod h1:iBbtSCu2XBx23ZKBPSOrRkjjQPZFPuis4dIYUhu/chs=
-golang.org/x/net v0.0.0-20190311183353-d8887717615a/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
-golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
-golang.org/x/net v0.0.0-20190620200207-3b0461eec859/go.mod h1:z5CRVTTTmAJ677TzLLGU+0bjPO0LkuOLi4/5GtJWs/s=
-golang.org/x/net v0.0.0-20210226172049-e18ecbb05110/go.mod h1:m0MpNAwzfU5UDzcl9v0D8zg8gWTRqZa9RBIspLL5mdg=
-golang.org/x/net v0.0.0-20220722155237-a158d28d115b/go.mod h1:XRhObCWvk6IyKnWLug+ECip1KBveYUHfp+8e9klMJ9c=
-golang.org/x/net v0.6.0/go.mod h1:2Tu9+aMcznHK/AK1HMvgo6xiTLG5rD5rZLDS+rp2Bjs=
-golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
-golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
-golang.org/x/sync v0.1.0/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
-golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
-golang.org/x/sys v0.0.0-20190412213103-97732733099d/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
-golang.org/x/sys v0.0.0-20201119102817-f84b799fce68/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
-golang.org/x/sys v0.0.0-20210615035016-665e8c7367d1/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.5.0 h1:MUK/U/4lj1t1oPg0HfuXDN/Z1wv31ZJ/YcPiGccS4DU=
-golang.org/x/sys v0.5.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
-golang.org/x/term v0.0.0-20210927222741-03fcf44c2211/go.mod h1:jbD1KX2456YbFQfuXm/mYQcufACuNUgVhRMnK/tPxf8=
-golang.org/x/term v0.5.0/go.mod h1:jMB1sMXY+tzblOD4FWmEbocvup2/aLOaQEp7JmGp78k=
-golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
-golang.org/x/text v0.3.3/go.mod h1:5Zoc/QRtKVWzQhOtBMvqHzDpF6irO9z98xDceosuGiQ=
-golang.org/x/text v0.3.7/go.mod h1:u+2+/6zg+i71rQMx5EYifcz6MCKuco9NR6JIITiCfzQ=
-golang.org/x/text v0.7.0/go.mod h1:mrYo+phRRbMaCq/xk9113O4dZlRixOauAjOtrjsXDZ8=
-golang.org/x/text v0.8.0/go.mod h1:e1OnstbJyHTd6l/uOt8jFFHp6TRDWZR/bV3emEE/zU8=
-golang.org/x/tools v0.0.0-20180917221912-90fa682c2a6e/go.mod h1:n7NCudcB/nEzxVGmLbDWY5pfWTLqBcC2KZ6jyYvM4mQ=
-golang.org/x/tools v0.0.0-20190312151545-0bb0c0a6e846/go.mod h1:LCzVGOaR6xXOjkQ3onu1FJEFr0SW1gC7cKk1uF8kGRs=
-golang.org/x/tools v0.0.0-20191119224855-298f0cb1881e/go.mod h1:b+2E5dAYhXwXZwtnZ6UAqBI28+e2cm9otk0dWdXHAEo=
-golang.org/x/tools v0.1.12/go.mod h1:hNGJHUnrk76NpqgfD5Aqm5Crs+Hm0VOH/i9J2+nxYbc=
-golang.org/x/tools v0.6.0/go.mod h1:Xwgl3UAJ/d3gWutnCtw505GrjyAbvKui8lOU390QaIU=
-golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
-
-```
-
-
 ## goreleaser.yaml
+
 ```yaml
 # vim: set ts=2 sw=2 tw=0 fo=cnqoj
 
@@ -585,10 +392,12 @@ release:
 
 
 ## main.go
-```go
+
+````go
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -609,6 +418,9 @@ const (
 	colorLiteRed   = "\033[91m"
 	colorGreen     = "\033[32m"
 	colorLiteGreen = "\033[92m"
+	colorYellow    = "\033[33m"
+	colorCyan      = "\033[36m"
+	colorBold      = "\033[1m"
 	colorReset     = "\033[0m"
 )
 const (
@@ -616,8 +428,7 @@ const (
 	mdCodeBlockEnd    = "\n```\n"
 	mdContentHeader   = "\n# Content:\n"
 	mdFileHeaderStart = "\n## "
-	mdCodeBlockStart  = "\n```"
-	mdCodeBlockEndNL  = "\n```\n\n"
+	// mdCodeBlockStart and mdCodeBlockEndNL are replaced by dynamic generation
 )
 const (
 	rgxLogPrefixIgnore  = "- RGX:"
@@ -681,6 +492,7 @@ type config struct {
 	includePatterns   []string
 	includedPathsFile string
 	excludedPathsFile string
+	instruction       string
 	addToClipboard    bool
 	showVersion       bool
 }
@@ -693,6 +505,7 @@ func parseFlags() (*config, error) {
 	includeStr := flag.String("include", "", "Comma-separated list of regular expressions. *Only* paths matching these are *included*.")
 	flag.StringVar(&cfg.includedPathsFile, "included-paths-file", "", "Saves the list of *included* paths to this file.")
 	flag.StringVar(&cfg.excludedPathsFile, "excluded-paths-file", "", "Saves the list of *excluded* paths to this file.")
+	flag.StringVar(&cfg.instruction, "instruction", "", "Optional text to prepend to the generated Markdown file.")
 	flag.BoolVar(&cfg.addToClipboard, "clipboard", false, "Copies the generated Markdown to the clipboard.")
 	flag.BoolVar(&cfg.showVersion, "version", false, "Displays the version and exits.")
 	// var helpFlag bool
@@ -734,13 +547,17 @@ func parseFlags() (*config, error) {
 func setupLogging(cfg *config) *log.Logger {
 	logger := log.New(os.Stdout, "", 0)
 	logger.Println("Starting CodeWeaver...")
-	logger.Println("Input directory:", cfg.inputDirAbs)
-	logger.Println("Output file:", cfg.outputFile)
+	// Use filepath.ToSlash to ensure consistent path separators in logs
+	logger.Println("Input directory:", filepath.ToSlash(cfg.inputDirAbs))
+	logger.Println("Output file:", filepath.ToSlash(cfg.outputFile))
 	if cfg.includedPathsFile != "" {
-		logger.Println("Included paths will be saved to:", cfg.includedPathsFile)
+		logger.Println("Included paths will be saved to:", filepath.ToSlash(cfg.includedPathsFile))
 	}
 	if cfg.excludedPathsFile != "" {
-		logger.Println("Excluded paths will be saved to:", cfg.excludedPathsFile)
+		logger.Println("Excluded paths will be saved to:", filepath.ToSlash(cfg.excludedPathsFile))
+	}
+	if cfg.instruction != "" {
+		logger.Println("Instruction text provided.")
 	}
 	if cfg.addToClipboard {
 		logger.Println("Result will be copied to clipboard.")
@@ -804,11 +621,17 @@ func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers []*regexp.Reg
 	logger.Println("Processing paths and building content section...")
 	contentBuilder := newContentBuilder(cfg.inputDirAbs, cfg.includedPathsFile, cfg.excludedPathsFile, ignoreMatchers, includeMatchers, logger)
 	// contentMarkdown is the markdown string of file contents
-	// processedPaths contains ALL files AND directories that passed shouldProcess
+	// processedPaths contains ALL files that passed shouldProcess (directories are stripped for cleaner tree)
 	// excludedPaths contains all files/dirs that failed shouldProcess
 	contentMarkdown, processedPaths, excludedPaths, err := contentBuilder.buildContentString()
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to build code content: %w", err)
+	}
+
+	// --- Prepend Instruction if present ---
+	if cfg.instruction != "" {
+		fullMarkdown.WriteString(cfg.instruction)
+		fullMarkdown.WriteString("\n\n")
 	}
 
 	// --- Build Tree View using processedPaths ---
@@ -917,15 +740,15 @@ func (tb *treeBuilder) printEntryLine(entry fs.DirEntry, depth int, isLast bool)
 	var prefix strings.Builder
 	for i := 0; i < depth; i++ {
 		if tb.depthOpen[i] {
-			prefix.WriteString("│  ")
+			prefix.WriteString("│   ")
 		} else {
-			prefix.WriteString("   ")
+			prefix.WriteString("    ")
 		}
 	}
 	if isLast {
-		prefix.WriteString("└─ ")
+		prefix.WriteString("└── ")
 	} else {
-		prefix.WriteString("├─ ")
+		prefix.WriteString("├── ")
 	}
 	tb.output.WriteString(prefix.String() + entry.Name() + "\n")
 }
@@ -952,7 +775,7 @@ func newContentBuilder(rootAbsPath, includedPathsFile, excludedPathsFile string,
 
 // buildContentString now returns:
 // 1. markdown string for file contents
-// 2. allProcessedPaths (files AND dirs that passed shouldProcess)
+// 2. allProcessedPaths (files only, directories are skipped to prune empty dirs from tree)
 // 3. excludedPaths (files AND dirs that failed shouldProcess)
 // 4. error
 func (cb *contentBuilder) buildContentString() (
@@ -963,6 +786,10 @@ func (cb *contentBuilder) buildContentString() (
 	// Slices to store paths
 	var localProcessedPaths []string
 	var localExcludedPaths []string
+
+	// Maps to store extensions
+	includedExtensions := make(map[string]struct{})
+	excludedExtensions := make(map[string]struct{})
 
 	walkErr := filepath.WalkDir(cb.rootAbsPath, func(currentWalkPath string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -988,26 +815,48 @@ func (cb *contentBuilder) buildContentString() (
 				cb.logger.Printf("%s%s %s%s\n", colorRed, logPrefixExclude, pathRelToInput, colorReset)
 			}
 			localExcludedPaths = append(localExcludedPaths, pathRelToInput)
+			// Track extension for excluded file
+			if !d.IsDir() {
+				ext := strings.ToLower(filepath.Ext(pathRelToInput))
+				if ext == "" {
+					ext = "(no ext)"
+				}
+				excludedExtensions[ext] = struct{}{}
+			}
 			return nil // Path excluded, continue walk
 		}
 
-		// Path passed filters, add to processedPaths
-		localProcessedPaths = append(localProcessedPaths, pathRelToInput)
-		// Log inclusion if not saving to file
+		// Log inclusion if not saving to file.
+		// Directories are logged without color to distinguish from files.
 		if cb.includedPathsFile == "" {
-			cb.logger.Printf("%s%s %s%s\n", colorGreen, logPrefixInclude, pathRelToInput, colorReset)
+			if d.IsDir() {
+				cb.logger.Printf("%s %s\n", logPrefixInclude, pathRelToInput)
+			} else {
+				cb.logger.Printf("%s%s %s%s\n", colorGreen, logPrefixInclude, pathRelToInput, colorReset)
+			}
 		}
 
-		// If it's a directory or an empty/unreadable file, don't add its content to markdown
+		// If it's a directory, don't add to processedPaths.
+		// This effectively removes "empty folders" (or folders with no included files) from the Tree View.
 		if d.IsDir() {
 			return nil // Continue into directory
 		}
+
+		// Path passed filters and is a file, add to processedPaths
+		localProcessedPaths = append(localProcessedPaths, pathRelToInput)
+		// Track extension for included file
+		ext := strings.ToLower(filepath.Ext(pathRelToInput))
+		if ext == "" {
+			ext = "(no ext)"
+		}
+		includedExtensions[ext] = struct{}{}
 
 		// Process file for content inclusion
 		fileContent, readErr := os.ReadFile(currentWalkPath)
 		if readErr != nil {
 			cb.logger.Printf("%sWarning: Failed to read file %s: %v%s\n", colorRed, currentWalkPath, readErr, colorReset)
-			contentSB.WriteString(fmt.Sprintf("%s%s\n%s\nError reading file: %v%s", mdFileHeaderStart, pathRelToInput, mdCodeBlockStart, readErr, mdCodeBlockEndNL))
+			// For error cases, we'll default to standard fencing (3 backticks)
+			contentSB.WriteString(fmt.Sprintf("%s%s\n```\nError reading file: %v\n```\n\n", mdFileHeaderStart, pathRelToInput, readErr))
 			return nil // File processed (passed filters), but content not added
 		}
 
@@ -1016,19 +865,83 @@ func (cb *contentBuilder) buildContentString() (
 			return nil
 		}
 
-		// Add file content to markdown
+		// Check for binary content
+		if isBinary(fileContent) {
+			cb.logger.Printf("Skipping binary file content: %s\n", pathRelToInput)
+			return nil
+		}
+
+		// Add file content to markdown with Dynamic Fencing
 		extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(currentWalkPath)), ".")
-		contentSB.WriteString(fmt.Sprintf("%s%s", mdFileHeaderStart, pathRelToInput))
-		contentSB.WriteString(fmt.Sprintf("%s%s\n", mdCodeBlockStart, extension))
+		maxBackticks := countMaxBackticks(fileContent)
+		fenceLen := 3
+		if maxBackticks >= 3 {
+			fenceLen = maxBackticks + 1
+		}
+		fence := strings.Repeat("`", fenceLen)
+
+		contentSB.WriteString(fmt.Sprintf("%s%s\n", mdFileHeaderStart, pathRelToInput))
+		contentSB.WriteString(fmt.Sprintf("\n%s%s\n", fence, extension))
 		contentSB.Write(fileContent)
-		contentSB.WriteString(mdCodeBlockEndNL)
+		contentSB.WriteString(fmt.Sprintf("\n%s\n\n", fence))
+
 		return nil
 	})
+
+	// Print Extension Summary
+	if walkErr == nil {
+		cb.logger.Println()
+		printExtensionSummary(includedExtensions, colorGreen, "Included extensions:", cb.logger)
+		printExtensionSummary(excludedExtensions, colorRed, "Excluded extensions:", cb.logger)
+	}
 
 	if walkErr != nil {
 		return "", nil, nil, fmt.Errorf("walking directory %s: %w", cb.rootAbsPath, walkErr)
 	}
 	return contentSB.String(), localProcessedPaths, localExcludedPaths, nil
+}
+
+func printExtensionSummary(extMap map[string]struct{}, color, label string, logger *log.Logger) {
+	if len(extMap) == 0 {
+		return
+	}
+	exts := make([]string, 0, len(extMap))
+	for ext := range extMap {
+		exts = append(exts, ext)
+	}
+	sort.Strings(exts)
+	logger.Printf("%s%s %s%s\n", color, label, strings.Join(exts, ", "), colorReset)
+}
+
+// isBinary checks if the content contains a null byte in the first 1024 bytes.
+// This is a standard heuristic to detect binary files.
+func isBinary(content []byte) bool {
+	const maxBytesToCheck = 1024
+	checkLen := len(content)
+	if checkLen > maxBytesToCheck {
+		checkLen = maxBytesToCheck
+	}
+	return bytes.IndexByte(content[:checkLen], 0) != -1
+}
+
+// countMaxBackticks calculates the maximum number of consecutive backticks in the byte slice.
+func countMaxBackticks(content []byte) int {
+	maxCount := 0
+	currentCount := 0
+	for _, b := range content {
+		if b == '`' {
+			currentCount++
+		} else {
+			if currentCount > maxCount {
+				maxCount = currentCount
+			}
+			currentCount = 0
+		}
+	}
+	if currentCount > maxCount {
+		maxCount = currentCount
+	}
+	return maxCount
 }
 
 func shouldProcess(pathRelToInput string, ignoreMatchers, includeMatchers []*regexp.Regexp) bool {
@@ -1053,21 +966,25 @@ func shouldProcess(pathRelToInput string, ignoreMatchers, includeMatchers []*reg
 }
 
 func writeOutput(cfg *config, markdownContent string, includedPaths, excludedPaths []string, logger *log.Logger) error {
-	logger.Printf("Writing output to %s...", cfg.outputFile)
+	outputFileSlash := filepath.ToSlash(cfg.outputFile)
+	logger.Printf("Writing output to %s...", outputFileSlash)
 	err := os.WriteFile(cfg.outputFile, []byte(markdownContent), 0644)
 	if err != nil {
-		logger.Printf("%sError writing to output file %s: %v%s", colorRed, cfg.outputFile, err, colorReset)
+		logger.Printf("%sError writing to output file %s: %v%s", colorRed, outputFileSlash, err, colorReset)
 		return fmt.Errorf("writing output file %s: %w", cfg.outputFile, err)
 	}
-	logger.Printf("Markdown content written to %s", cfg.outputFile)
+	logger.Printf("Markdown content written to %s", outputFileSlash)
+
 	if cfg.includedPathsFile != "" {
+		includedFileSlash := filepath.ToSlash(cfg.includedPathsFile)
 		if err := savePathsToFile(cfg.includedPathsFile, includedPaths, logger); err != nil { // Pass `includedPaths` from generateMarkdown
-			logger.Printf("%sWarning: Error saving included paths to %s: %v%s", colorRed, cfg.includedPathsFile, err, colorReset)
+			logger.Printf("%sWarning: Error saving included paths to %s: %v%s", colorRed, includedFileSlash, err, colorReset)
 		}
 	}
 	if cfg.excludedPathsFile != "" {
+		excludedFileSlash := filepath.ToSlash(cfg.excludedPathsFile)
 		if err := savePathsToFile(cfg.excludedPathsFile, excludedPaths, logger); err != nil { // Pass `excludedPaths` from generateMarkdown
-			logger.Printf("%sWarning: Error saving excluded paths to %s: %v%s", colorRed, cfg.excludedPathsFile, err, colorReset)
+			logger.Printf("%sWarning: Error saving excluded paths to %s: %v%s", colorRed, excludedFileSlash, err, colorReset)
 		}
 	}
 	if cfg.addToClipboard {
@@ -1084,7 +1001,7 @@ func writeOutput(cfg *config, markdownContent string, includedPaths, excludedPat
 
 func savePathsToFile(filename string, paths []string, logger *log.Logger) error {
 	if len(paths) == 0 {
-		logger.Printf("No paths to save to %s.", filename)
+		logger.Printf("No paths to save to %s.", filepath.ToSlash(filename))
 		return nil
 	}
 	sort.Strings(paths) // Sort for consistent output
@@ -1095,36 +1012,80 @@ func savePathsToFile(filename string, paths []string, logger *log.Logger) error 
 	}
 	err := os.WriteFile(filename, []byte(sb.String()), 0644)
 	if err == nil {
-		logger.Printf("Paths saved to %s", filename)
+		logger.Printf("Paths saved to %s", filepath.ToSlash(filename))
 	} else {
-		return fmt.Errorf("writing paths file %s: %w", filename, err)
+		return fmt.Errorf("writing paths file %s: %w", filepath.ToSlash(filename), err)
 	}
 	return nil
 }
 
 func printHelp() {
-	fmt.Fprintf(os.Stderr, "CodeWeaver: Generate Markdown Documentation from Your Codebase.\n")
-	fmt.Fprintf(os.Stderr, "Usage: codeweaver [options]\nFor help, use -h or --help.\n")
-	fmt.Fprintf(os.Stderr, "\nOptions:\n")
-	flag.PrintDefaults()
-	fmt.Fprintf(os.Stderr, "\nExamples:\n")
-	fmt.Fprintf(os.Stderr, "  codeweaver                                   # Process current directory, output to codebase.md\n")
-	fmt.Fprintf(os.Stderr, "  codeweaver -input my_project -output docs.md # Specify input and output\n")
-	fmt.Fprintf(os.Stderr, `  codeweaver -ignore "build/,vendor/" -include "\.go$,\.md$" # Filter paths`+"\n")
-	fmt.Fprintf(os.Stderr, "  codeweaver -clipboard -excluded-paths-file ignored.txt # Copy & log excluded\n")
-	fmt.Fprintf(os.Stderr, "\nNotes on patterns:\n")
-	fmt.Fprintf(os.Stderr, "  - Patterns are Go regular expressions (https://pkg.go.dev/regexp/syntax).\n")
-	fmt.Fprintf(os.Stderr, "  - Paths for filtering are relative to the input directory (e.g., \"src/main.go\").\n")
-	fmt.Fprintf(os.Stderr, "  - Use forward slashes '/' in patterns for cross-platform compatibility (e.g., \"data/images/\").\n")
-	fmt.Fprintf(os.Stderr, "  - Use 'path/to/dir/?' to match a directory itself (with or without a trailing slash).\n")
-	fmt.Fprintf(os.Stderr, "  - Use 'path/to/dir(/.*)?' to match a directory AND its contents.\n")
+	// Header
+	fmt.Fprintf(os.Stderr, "%s%sCodeWeaver%s: Generate Markdown Documentation from Your Codebase.\n\n", colorBold, colorGreen, colorReset)
+
+	// Usage
+	fmt.Fprintf(os.Stderr, "%sUsage:%s\n", colorCyan, colorReset)
+	fmt.Fprintf(os.Stderr, "  codeweaver [flags]\n\n")
+
+	// Flags
+	fmt.Fprintf(os.Stderr, "%sFlags:%s\n", colorCyan, colorReset)
+	flag.VisitAll(func(f *flag.Flag) {
+		// Format: -flag
+		//         Description (Default: value)
+		// Flag name in Green, Description in default (white/reset)
+		fmt.Fprintf(os.Stderr, "  %s-%-20s%s\n", colorGreen, f.Name, colorReset)
+		fmt.Fprintf(os.Stderr, "      %s", f.Usage)
+
+		// Print default value if not empty
+		if f.DefValue != "" {
+			// Don't print defaults for boolean flags that are false (cleaner output)
+			if f.Name == "clipboard" && f.DefValue == "false" {
+				// skip
+			} else if f.Name == "version" && f.DefValue == "false" {
+				// skip
+			} else {
+				fmt.Fprintf(os.Stderr, " %s(Default: %s)%s", colorYellow, f.DefValue, colorReset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+	})
+	fmt.Fprintln(os.Stderr)
+
+	// Examples
+	fmt.Fprintf(os.Stderr, "%sExamples:%s\n", colorCyan, colorReset)
+	fmt.Fprintf(os.Stderr, "  %scodeweaver%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Process current directory, output to codebase.md\n\n")
+
+	fmt.Fprintf(os.Stderr, "  %scodeweaver -input src -output source_docs.md%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Specify input directory and output filename\n\n")
+
+	fmt.Fprintf(os.Stderr, "  %scodeweaver -ignore \"build/,vendor/\" -include \"\\.go$,\\.md$\"%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Exclude 'build' and 'vendor' folders, but ONLY include .go and .md files\n\n")
+
+	fmt.Fprintf(os.Stderr, "  %scodeweaver -instruction \"Analyze this code\" -clipboard%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Prepend instruction and copy result to clipboard\n\n")
+
+	// Filter Logic
+	fmt.Fprintf(os.Stderr, "%sHow Filters Work:%s\n", colorCyan, colorReset)
+	fmt.Fprintf(os.Stderr, "  1. %s-ignore%s (Blacklist): Matches are excluded. Checked first.\n", colorLiteRed, colorReset)
+	fmt.Fprintf(os.Stderr, "  2. %s-include%s (Whitelist): If specified, ONLY matches are included.\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "     If a path matches both (unlikely given logic), ignore takes precedence.\n")
+	fmt.Fprintf(os.Stderr, "     Directories matching -ignore are skipped entirely.\n\n")
+
+	// Regex Notes
+	fmt.Fprintf(os.Stderr, "%sRegex Notes:%s\n", colorCyan, colorReset)
+	fmt.Fprintf(os.Stderr, "  - Patterns are Go regular expressions.\n")
+	fmt.Fprintf(os.Stderr, "  - Use forward slashes '/' for paths (e.g., \"dir/file.txt\").\n")
+	fmt.Fprintf(os.Stderr, "  - Match a file extension: \"\\.go$\"\n")
+	fmt.Fprintf(os.Stderr, "  - Match a directory: \"^vendor/\" or \"/vendor/\"\n")
 }
 
-```
+````
 
 
 ## main_test.go
-```go
+
+`````go
 package main
 
 import (
@@ -1168,13 +1129,15 @@ func createTestFS(t *testing.T) (string, func()) {
 		"script.go": "package main\nfunc main() {}",
 		"README.md": "# Test Readme",
 		"data/":     "", "data/image.png": "fake png data", "data/config.yaml": "key: value",
-		"build/": "", "build/output.exe": "binary data", "build/tmp/": "", "build/tmp/log.txt": "log entry",
+		"build/": "", "build/output.exe": "binary\x00data", // Binary file with null byte
+		"build/tmp/": "", "build/tmp/log.txt": "log entry",
 		".git/": "", ".git/HEAD": "ref: refs/heads/main",
 		"node_modules/": "", "node_modules/dep/": "", "node_modules/dep/package.json": "{}",
 		"empty_dir/":                    "",
 		"docs/sub_docs/file_in_sub.txt": "nested doc content",
 		"other.log":                     "another log",
-		"empty_file.txt":                "", // Explicitly empty file
+		"empty_file.txt":                "",                                                             // Explicitly empty file
+		"doc_with_ticks.md":             "Here is a code block:\n```go\nfmt.Println(\"Hi\")\n```\nEnd.", // File with 3 backticks
 	}
 	for relPath, content := range structure {
 		absPath := filepath.Join(rootDir, relPath)
@@ -1264,13 +1227,16 @@ func runMainLogic(args []string, outputDir string) (string, error) {
 	}
 
 	testRunLogger.Println("Starting CodeWeaver...")
-	testRunLogger.Println("Input directory:", cfg.inputDirAbs)
-	testRunLogger.Println("Output file:", filepath.Join(outputDir, cfg.outputFile))
+	testRunLogger.Println("Input directory:", filepath.ToSlash(cfg.inputDirAbs))
+	testRunLogger.Println("Output file:", filepath.ToSlash(filepath.Join(outputDir, cfg.outputFile)))
 	if cfg.includedPathsFile != "" {
-		testRunLogger.Println("Included paths will be saved to:", filepath.Join(outputDir, cfg.includedPathsFile))
+		testRunLogger.Println("Included paths will be saved to:", filepath.ToSlash(filepath.Join(outputDir, cfg.includedPathsFile)))
 	}
 	if cfg.excludedPathsFile != "" {
-		testRunLogger.Println("Excluded paths will be saved to:", filepath.Join(outputDir, cfg.excludedPathsFile))
+		testRunLogger.Println("Excluded paths will be saved to:", filepath.ToSlash(filepath.Join(outputDir, cfg.excludedPathsFile)))
+	}
+	if cfg.instruction != "" {
+		testRunLogger.Println("Instruction text provided.")
 	}
 	if cfg.addToClipboard {
 		testRunLogger.Println("Result will be copied to clipboard.")
@@ -1407,6 +1373,7 @@ func TestParseFlags(t *testing.T) {
 			"-include", "c,d",
 			"-included-paths-file", "inc.txt",
 			"-excluded-paths-file", "exc.txt",
+			"-instruction", "Hello Instruction",
 			"-clipboard",
 		}
 		logOutput, err := runParse(t, args)
@@ -1427,6 +1394,9 @@ func TestParseFlags(t *testing.T) {
 		}
 		if !strings.Contains(logOutput, "Excluded paths will be saved to:") || !strings.Contains(logOutput, "exc.txt") {
 			t.Errorf("Set excludedPathsFile logging mismatch. Log:\n%s", logOutput)
+		}
+		if !strings.Contains(logOutput, "Instruction text provided.") {
+			t.Errorf("Set instruction logging mismatch. Log:\n%s", logOutput)
 		}
 		if !strings.Contains(logOutput, "Result will be copied to clipboard.") {
 			t.Errorf("Set clipboard logging mismatch. Log:\n%s", logOutput)
@@ -1498,64 +1468,62 @@ func TestTreeBuilder(t *testing.T) {
 	}{
 		{
 			name: "FullTree_AllPathsProcessed",
-			processedPaths: []string{ // Simulate all paths being processed by contentBuilder
-				".git", ".git/HEAD",
+			processedPaths: []string{ // Simulate all paths being processed by contentBuilder (FILES ONLY now)
+				".git/HEAD",
 				"README.md",
-				"build", "build/output.exe", "build/tmp", "build/tmp/log.txt",
-				"data", "data/config.yaml", "data/image.png",
-				"docs", "docs/sub_docs", "docs/sub_docs/file_in_sub.txt",
-				"empty_dir",
+				"build/output.exe", "build/tmp/log.txt",
+				"data/config.yaml", "data/image.png",
+				"doc_with_ticks.md", // New file
+				"docs/sub_docs/file_in_sub.txt",
+				// "empty_dir", // Dirs are not in processedPaths
 				"file1.txt", "empty_file.txt",
-				"node_modules", "node_modules/dep", "node_modules/dep/package.json",
+				"node_modules/dep/package.json",
 				"other.log",
 				"script.go",
 			},
 			expectedTreeLines: []string{
-				"├─ .git", "│  └─ HEAD",
-				"├─ README.md",
-				"├─ build", "│  ├─ output.exe", "│  └─ tmp", "│     └─ log.txt",
-				"├─ data", "│  ├─ config.yaml", "│  └─ image.png",
-				"├─ docs", "│  └─ sub_docs", "│     └─ file_in_sub.txt",
-				"├─ empty_dir",
-				"├─ empty_file.txt",
-				"├─ file1.txt",
-				"├─ node_modules", "│  └─ dep", "│     └─ package.json",
-				"├─ other.log",
-				"└─ script.go",
+				"├── .git", "│   └── HEAD",
+				"├── README.md",
+				"├── build", "│   ├── output.exe", "│   └── tmp", "│       └── log.txt",
+				"├── data", "│   ├── config.yaml", "│   └── image.png",
+				"├── doc_with_ticks.md",
+				"├── docs", "│   └── sub_docs", "│       └── file_in_sub.txt",
+				// "├── empty_dir", // Should NOT appear
+				"├── empty_file.txt",
+				"├── file1.txt",
+				"├── node_modules", "│   └── dep", "│       └── package.json",
+				"├── other.log",
+				"└── script.go",
 			},
 		},
 		{
 			name: "PartialTree_OnlyGoAndMdFilesProcessed",
-			processedPaths: []string{ // Only .go and .md files (and their parent dirs for tree structure)
+			processedPaths: []string{ // Only .go and .md files
 				"README.md",
 				"script.go",
-				// Implicitly, parent directories like "." are needed for WalkDir to start
-				// but treeBuilder logic ensures parent dirs of processed files are shown.
 			},
 			expectedTreeLines: []string{
-				"├─ README.md",
-				"└─ script.go",
+				"├── README.md",
+				"└── script.go",
 			},
 		},
 		{
 			name: "PartialTree_SpecificFilesAndTheirDirs",
 			processedPaths: []string{
-				"docs", "docs/sub_docs", "docs/sub_docs/file_in_sub.txt", // file + its parent dirs
-				"data", "data/config.yaml", // file + its parent dir
+				"docs/sub_docs/file_in_sub.txt", // file
+				"data/config.yaml",              // file
 			},
 			expectedTreeLines: []string{
-				"├─ data", "│  └─ config.yaml",
-				"└─ docs", "   └─ sub_docs", "      └─ file_in_sub.txt",
+				"├── data", "│   └── config.yaml",
+				"└── docs", "    └── sub_docs", "        └── file_in_sub.txt",
 			},
 		},
 		{
-			name: "EmptyDir_WhenProcessed",
+			name:           "EmptyDir_WhenProcessed",
 			processedPaths: []string{
-				"empty_dir",
+				// "empty_dir", // Empty dir would not produce a processed path for a file
 			},
-			expectedTreeLines: []string{
-				"└─ empty_dir",
-			},
+			expectedTreeLines: []string{}, // Expect empty tree
 		},
 		{
 			name:              "NoPathsProcessed",
@@ -1621,34 +1589,39 @@ func TestContentBuilder(t *testing.T) {
 	testLogger := log.New(io.Discard, "", 0)
 
 	testCases := []struct {
-		name                            string
-		ignoreMatchers                  []*regexp.Regexp
-		includeMatchers                 []*regexp.Regexp
-		expectedContentSubstr           string   // Substring to find in generated markdown content
-		expectedProcessedPaths          []string // All files AND DIRS that passed filters
-		expectedExcludedPaths           []string // All files AND DIRS that failed filters
-		expectEmptyFileSkippedInContent bool     // If an empty file should be processed but not in content markdown
+		name                             string
+		ignoreMatchers                   []*regexp.Regexp
+		includeMatchers                  []*regexp.Regexp
+		expectedContentSubstr            string   // Substring to find in generated markdown content
+		expectedProcessedPaths           []string // All FILES that passed filters (no directories)
+		expectedExcludedPaths            []string // All files AND DIRS that failed filters
+		expectEmptyFileSkippedInContent  bool     // If an empty file should be processed but not in content markdown
+		expectBinaryFileSkippedInContent bool     // If a binary file should be processed but not in content markdown
+		dynamicFenceCheck                bool     // If true, check for dynamic fencing on doc_with_ticks.md
 	}{
 		{
 			name:                  "NoFilters_AllProcessed_ContentForAllNonEmpty",
-			expectedContentSubstr: "## file1.txt\n```txt\ncontent of file1\n```",
-			expectedProcessedPaths: []string{ // Includes dirs now
-				".git", ".git/HEAD", "README.md",
-				"build", "build/output.exe", "build/tmp", "build/tmp/log.txt",
-				"data", "data/config.yaml", "data/image.png",
-				"docs", "docs/sub_docs", "docs/sub_docs/file_in_sub.txt",
-				"empty_dir", "empty_file.txt", "file1.txt",
-				"node_modules", "node_modules/dep", "node_modules/dep/package.json",
+			expectedContentSubstr: "## file1.txt\n\n```txt\ncontent of file1\n```",
+			expectedProcessedPaths: []string{ // FILES ONLY
+				".git/HEAD", "README.md",
+				"build/output.exe", "build/tmp/log.txt",
+				"data/config.yaml", "data/image.png",
+				"doc_with_ticks.md",
+				"docs/sub_docs/file_in_sub.txt",
+				"empty_file.txt", "file1.txt",
+				"node_modules/dep/package.json",
 				"other.log", "script.go",
 			},
-			expectedExcludedPaths:           []string{},
-			expectEmptyFileSkippedInContent: true,
+			expectedExcludedPaths:            []string{},
+			expectEmptyFileSkippedInContent:  true,
+			expectBinaryFileSkippedInContent: true,
+			dynamicFenceCheck:                true,
 		},
 		{
 			name:                   "IncludeOnlyGoAndMdFiles",
 			includeMatchers:        []*regexp.Regexp{mustCompileRegex(`\.go$`), mustCompileRegex(`\.md$`)},
-			expectedContentSubstr:  "## script.go\n```go\npackage main", // README content also present
-			expectedProcessedPaths: []string{"README.md", "script.go"},  // Only these files pass
+			expectedContentSubstr:  "## script.go\n\n```go\npackage main",                   // README content also present
+			expectedProcessedPaths: []string{"README.md", "doc_with_ticks.md", "script.go"}, // Only these files pass
 			expectedExcludedPaths: []string{ // All other files and dirs
 				".git", ".git/HEAD",
 				"build", "build/output.exe", "build/tmp", "build/tmp/log.txt",
@@ -1663,13 +1636,14 @@ func TestContentBuilder(t *testing.T) {
 			name:                   "IgnoreGitDir_IncludeTxtFiles",
 			ignoreMatchers:         []*regexp.Regexp{mustCompileRegex(`^\.git(/.*)?$`)}, // Ignore .git dir and its contents
 			includeMatchers:        []*regexp.Regexp{mustCompileRegex(`\.txt$`)},
-			expectedContentSubstr:  "## file1.txt\n```txt\ncontent of file1\n```",
+			expectedContentSubstr:  "## file1.txt\n\n```txt\ncontent of file1\n```",
 			expectedProcessedPaths: []string{"build/tmp/log.txt", "docs/sub_docs/file_in_sub.txt", "empty_file.txt", "file1.txt"},
 			expectedExcludedPaths: []string{
 				".git", ".git/HEAD", // Explicitly ignored
 				"README.md", "script.go", "other.log", // Not .txt
 				"build", "build/output.exe", "build/tmp", // Dirs not .txt, output.exe not .txt
 				"data", "data/config.yaml", "data/image.png", // Not .txt
+				"doc_with_ticks.md",     // Not .txt
 				"docs", "docs/sub_docs", // Dirs not .txt
 				"empty_dir",                                                         // Dir not .txt
 				"node_modules", "node_modules/dep", "node_modules/dep/package.json", // Not .txt
@@ -1684,6 +1658,7 @@ func TestContentBuilder(t *testing.T) {
 				".git", ".git/HEAD", "README.md", "script.go", "other.log",
 				"build", "build/output.exe", "build/tmp", "build/tmp/log.txt",
 				"data", "data/config.yaml", "data/image.png",
+				"doc_with_ticks.md",
 				"docs", "docs/sub_docs", "docs/sub_docs/file_in_sub.txt",
 				"empty_dir", "file1.txt",
 				"node_modules", "node_modules/dep", "node_modules/dep/package.json",
@@ -1710,6 +1685,22 @@ func TestContentBuilder(t *testing.T) {
 			if tc.expectEmptyFileSkippedInContent {
 				if strings.Contains(actualContentStr, "## empty_file.txt") {
 					t.Errorf("Empty file 'empty_file.txt' was found in markdown content, but should have been skipped.")
+				}
+			}
+
+			// Validate if binary file content was correctly skipped from markdown
+			if tc.expectBinaryFileSkippedInContent {
+				if strings.Contains(actualContentStr, "## build/output.exe") {
+					t.Errorf("Binary file 'build/output.exe' was found in markdown content, but should have been skipped.")
+				}
+			}
+
+			// Validate dynamic fencing for doc_with_ticks.md
+			if tc.dynamicFenceCheck {
+				// doc_with_ticks.md has 3 backticks, so fence should be 4 backticks
+				expectedFenceStart := "\n````md\n"
+				if !strings.Contains(actualContentStr, expectedFenceStart) {
+					t.Errorf("Dynamic fencing mismatch. Expected 4 backticks for doc_with_ticks.md.\nActual Content fragment:\n%s", actualContentStr)
 				}
 			}
 
@@ -1779,13 +1770,13 @@ func TestPrintHelp(t *testing.T) {
 				}
 			}
 			output := stderrBuf.String()
-			if !strings.Contains(output, "Usage: codeweaver [options]") {
+			if !strings.Contains(output, "Usage:") {
 				t.Errorf("Help for '%s' missing 'Usage:'. Output:\n%s", helpArg, output)
 			}
-			if !strings.Contains(output, "Options:") {
-				t.Errorf("Help for '%s' missing 'Options:'. Output:\n%s", helpArg, output)
+			if !strings.Contains(output, "Flags:") {
+				t.Errorf("Help for '%s' missing 'Flags:'. Output:\n%s", helpArg, output)
 			}
-			expectedFlags := []string{"-input string", "-output string", "-ignore string", "-clipboard"}
+			expectedFlags := []string{"-input", "-output", "-ignore", "-clipboard", "-instruction"}
 			for _, flagSig := range expectedFlags {
 				if !strings.Contains(output, " "+flagSig) {
 					t.Errorf("Help for '%s' missing flag '%s'. Output:\n%s", helpArg, flagSig, output)
@@ -1809,16 +1800,16 @@ func TestMainExecutionFlows(t *testing.T) {
 			t.Fatalf("Run failed: %v. Log:\n%s", err, logOutput)
 		}
 
-		expectedOutputPath := filepath.Join(testOutputDir, outputFileName)
+		expectedOutputPath := filepath.ToSlash(filepath.Join(testOutputDir, outputFileName))
 		if !strings.Contains(logOutput, "Markdown content written to "+expectedOutputPath) {
 			t.Errorf("Missing 'Markdown content written...' log. Expected path '%s'. Got:\n%s", expectedOutputPath, logOutput)
 		}
-		if _, statErr := os.Stat(expectedOutputPath); statErr != nil {
+		if _, statErr := os.Stat(filepath.Join(testOutputDir, outputFileName)); statErr != nil {
 			t.Errorf("Expected output file '%s' to exist, stat failed: %v", expectedOutputPath, statErr)
 		}
 
 		// Read the generated markdown and verify tree and content parts
-		generatedMdBytes, readErr := os.ReadFile(expectedOutputPath)
+		generatedMdBytes, readErr := os.ReadFile(filepath.Join(testOutputDir, outputFileName))
 		if readErr != nil {
 			t.Fatalf("Failed to read generated markdown file: %v", readErr)
 		}
@@ -1828,13 +1819,13 @@ func TestMainExecutionFlows(t *testing.T) {
 		if !strings.Contains(generatedMd, "# Tree View:") {
 			t.Errorf("Generated markdown missing Tree View header.")
 		}
-		if strings.Contains(generatedMd, "├─ .git") {
+		if strings.Contains(generatedMd, "├── .git") {
 			t.Errorf("Generated markdown tree should NOT contain ignored entry '.git'. Output:\n%s", generatedMd)
 		}
-		if !strings.Contains(generatedMd, "├─ build") { // Check for a non-ignored directory
+		if !strings.Contains(generatedMd, "├── build") { // Check for a non-ignored directory
 			t.Errorf("Generated markdown tree missing expected entry 'build'. Output:\n%s", generatedMd)
 		}
-		if !strings.Contains(generatedMd, "└─ script.go") { // Example tree entry
+		if !strings.Contains(generatedMd, "└── script.go") { // Example tree entry
 			t.Errorf("Generated markdown tree missing expected entry 'script.go'.")
 		}
 
@@ -1869,6 +1860,18 @@ func TestMainExecutionFlows(t *testing.T) {
 		logOutput, err := runMainLogic(args, testOutputDir)
 		if err != nil {
 			t.Fatalf("Run failed: %v. Log:\n%s", err, logOutput)
+		}
+
+		// Check extension summary logic
+		if !strings.Contains(logOutput, "Included extensions: .md, .txt") {
+			t.Errorf("Missing/Incorrect included extension summary. Log:\n%s", logOutput)
+		}
+		// Excluded should contain .go (script.go), .log (other.log), .exe (build/output.exe), .yaml (data/config.yaml), .png (data/image.png), .json (node_modules/dep/package.json)
+		// .git dir contents are ignored via regex "^\.git", but directory handling might affect if files inside are reached?
+		// Code logic: if excluded, we return nil. So if .git matches, we don't scan inside. Thus no extensions from inside .git.
+		// However, files like script.go are definitely excluded.
+		if !strings.Contains(logOutput, "Excluded extensions:") || !strings.Contains(logOutput, ".go") || !strings.Contains(logOutput, ".exe") {
+			t.Errorf("Missing/Incorrect excluded extension summary. Log:\n%s", logOutput)
 		}
 
 		fullIncludedPath := filepath.Join(testOutputDir, includedFile)
@@ -1912,6 +1915,33 @@ func TestMainExecutionFlows(t *testing.T) {
 		}
 	})
 
+	t.Run("Run_WithInstruction", func(t *testing.T) {
+		testOutputDir := t.TempDir()
+		outputFileName := "instruction_run.md"
+		instructionText := "This is a prompt instruction."
+		args := []string{
+			"-input", baseInputDir,
+			"-output", outputFileName,
+			"-instruction", instructionText,
+		}
+		logOutput, err := runMainLogic(args, testOutputDir)
+		if err != nil {
+			t.Fatalf("Run failed: %v. Log:\n%s", err, logOutput)
+		}
+
+		expectedOutputPath := filepath.Join(testOutputDir, outputFileName)
+		generatedMdBytes, readErr := os.ReadFile(expectedOutputPath)
+		if readErr != nil {
+			t.Fatalf("Failed to read generated markdown file: %v", readErr)
+		}
+		generatedMd := string(generatedMdBytes)
+
+		// Check if instruction is at the beginning
+		if !strings.HasPrefix(generatedMd, instructionText+"\n\n# Tree View:") {
+			t.Errorf("Instruction text not found at the beginning of the file.\nFile Start:\n%s...", generatedMd[:min(len(generatedMd), 100)])
+		}
+	})
+
 	// ... (other TestMainExecutionFlows like VersionFlag, HelpFlag, Error_InvalidPatterns, etc. can remain similar,
 	//      just ensure they use testOutputDir for runMainLogic) ...
 	// t.Run("VersionFlag", func(t *testing.T) {
@@ -1941,10 +1971,18 @@ func TestMainExecutionFlows(t *testing.T) {
 
 }
 
-```
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+`````
 
 
 ## run_tests.ps1
+
 ```ps1
 # go test -cover -v
 

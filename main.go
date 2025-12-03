@@ -22,6 +22,9 @@ const (
 	colorLiteRed   = "\033[91m"
 	colorGreen     = "\033[32m"
 	colorLiteGreen = "\033[92m"
+	colorYellow    = "\033[33m"
+	colorCyan      = "\033[36m"
+	colorBold      = "\033[1m"
 	colorReset     = "\033[0m"
 )
 const (
@@ -29,6 +32,7 @@ const (
 	mdCodeBlockEnd    = "\n```\n"
 	mdContentHeader   = "\n# Content:\n"
 	mdFileHeaderStart = "\n## "
+	// mdCodeBlockStart and mdCodeBlockEndNL are replaced by dynamic generation
 )
 const (
 	rgxLogPrefixIgnore  = "- RGX:"
@@ -620,20 +624,62 @@ func savePathsToFile(filename string, paths []string, logger *log.Logger) error 
 }
 
 func printHelp() {
-	fmt.Fprintf(os.Stderr, "CodeWeaver: Generate Markdown Documentation from Your Codebase.\n")
-	fmt.Fprintf(os.Stderr, "Usage: codeweaver [options]\nFor help, use -h or --help.\n")
-	fmt.Fprintf(os.Stderr, "\nOptions:\n")
-	flag.PrintDefaults()
-	fmt.Fprintf(os.Stderr, "\nExamples:\n")
-	fmt.Fprintf(os.Stderr, "  codeweaver                                   # Process current directory, output to codebase.md\n")
-	fmt.Fprintf(os.Stderr, "  codeweaver -input my_project -output docs.md # Specify input and output\n")
-	fmt.Fprintf(os.Stderr, `  codeweaver -ignore "build/,vendor/" -include "\.go$,\.md$" # Filter paths`+"\n")
-	fmt.Fprintf(os.Stderr, "  codeweaver -clipboard -excluded-paths-file ignored.txt # Copy & log excluded\n")
-	fmt.Fprintf(os.Stderr, "  codeweaver -instruction \"Please analyze this code.\" # Add instruction at top\n")
-	fmt.Fprintf(os.Stderr, "\nNotes on patterns:\n")
-	fmt.Fprintf(os.Stderr, "  - Patterns are Go regular expressions (https://pkg.go.dev/regexp/syntax).\n")
-	fmt.Fprintf(os.Stderr, "  - Paths for filtering are relative to the input directory (e.g., \"src/main.go\").\n")
-	fmt.Fprintf(os.Stderr, "  - Use forward slashes '/' in patterns for cross-platform compatibility (e.g., \"data/images/\").\n")
-	fmt.Fprintf(os.Stderr, "  - Use 'path/to/dir/?' to match a directory itself (with or without a trailing slash).\n")
-	fmt.Fprintf(os.Stderr, "  - Use 'path/to/dir(/.*)?' to match a directory AND its contents.\n")
+	// Header
+	fmt.Fprintf(os.Stderr, "%s%sCodeWeaver%s: Generate Markdown Documentation from Your Codebase.\n\n", colorBold, colorGreen, colorReset)
+
+	// Usage
+	fmt.Fprintf(os.Stderr, "%sUsage:%s\n", colorCyan, colorReset)
+	fmt.Fprintf(os.Stderr, "  codeweaver [flags]\n\n")
+
+	// Flags
+	fmt.Fprintf(os.Stderr, "%sFlags:%s\n", colorCyan, colorReset)
+	flag.VisitAll(func(f *flag.Flag) {
+		// Format: -flag
+		//         Description (Default: value)
+		// Flag name in Green, Description in default (white/reset)
+		fmt.Fprintf(os.Stderr, "  %s-%-20s%s\n", colorGreen, f.Name, colorReset)
+		fmt.Fprintf(os.Stderr, "      %s", f.Usage)
+
+		// Print default value if not empty
+		if f.DefValue != "" {
+			// Don't print defaults for boolean flags that are false (cleaner output)
+			if f.Name == "clipboard" && f.DefValue == "false" {
+				// skip
+			} else if f.Name == "version" && f.DefValue == "false" {
+				// skip
+			} else {
+				fmt.Fprintf(os.Stderr, " %s(Default: %s)%s", colorYellow, f.DefValue, colorReset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+	})
+	fmt.Fprintln(os.Stderr)
+
+	// Examples
+	fmt.Fprintf(os.Stderr, "%sExamples:%s\n", colorCyan, colorReset)
+	fmt.Fprintf(os.Stderr, "  %scodeweaver%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Process current directory, output to codebase.md\n\n")
+
+	fmt.Fprintf(os.Stderr, "  %scodeweaver -input src -output source_docs.md%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Specify input directory and output filename\n\n")
+
+	fmt.Fprintf(os.Stderr, "  %scodeweaver -ignore \"build/,vendor/\" -include \"\\.go$,\\.md$\"%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Exclude 'build' and 'vendor' folders, but ONLY include .go and .md files\n\n")
+
+	fmt.Fprintf(os.Stderr, "  %scodeweaver -instruction \"Analyze this code\" -clipboard%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Prepend instruction and copy result to clipboard\n\n")
+
+	// Filter Logic
+	fmt.Fprintf(os.Stderr, "%sHow Filters Work:%s\n", colorCyan, colorReset)
+	fmt.Fprintf(os.Stderr, "  1. %s-ignore%s (Blacklist): Matches are excluded. Checked first.\n", colorLiteRed, colorReset)
+	fmt.Fprintf(os.Stderr, "  2. %s-include%s (Whitelist): If specified, ONLY matches are included.\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "     If a path matches both (unlikely given logic), ignore takes precedence.\n")
+	fmt.Fprintf(os.Stderr, "     Directories matching -ignore are skipped entirely.\n\n")
+
+	// Regex Notes
+	fmt.Fprintf(os.Stderr, "%sRegex Notes:%s\n", colorCyan, colorReset)
+	fmt.Fprintf(os.Stderr, "  - Patterns are Go regular expressions.\n")
+	fmt.Fprintf(os.Stderr, "  - Use forward slashes '/' for paths (e.g., \"dir/file.txt\").\n")
+	fmt.Fprintf(os.Stderr, "  - Match a file extension: \"\\.go$\"\n")
+	fmt.Fprintf(os.Stderr, "  - Match a directory: \"^vendor/\" or \"/vendor/\"\n")
 }

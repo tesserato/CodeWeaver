@@ -682,13 +682,13 @@ func TestPrintHelp(t *testing.T) {
 				}
 			}
 			output := stderrBuf.String()
-			if !strings.Contains(output, "Usage: codeweaver [options]") {
+			if !strings.Contains(output, "Usage:") {
 				t.Errorf("Help for '%s' missing 'Usage:'. Output:\n%s", helpArg, output)
 			}
-			if !strings.Contains(output, "Options:") {
-				t.Errorf("Help for '%s' missing 'Options:'. Output:\n%s", helpArg, output)
+			if !strings.Contains(output, "Flags:") {
+				t.Errorf("Help for '%s' missing 'Flags:'. Output:\n%s", helpArg, output)
 			}
-			expectedFlags := []string{"-input string", "-output string", "-ignore string", "-clipboard", "-instruction string"}
+			expectedFlags := []string{"-input", "-output", "-ignore", "-clipboard", "-instruction"}
 			for _, flagSig := range expectedFlags {
 				if !strings.Contains(output, " "+flagSig) {
 					t.Errorf("Help for '%s' missing flag '%s'. Output:\n%s", helpArg, flagSig, output)
