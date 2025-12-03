@@ -8,3 +8,4 @@ exc.txt
 inc.txt
 excluded.log
 included.log
+coverage.out

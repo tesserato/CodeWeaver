@@ -93,6 +93,7 @@ type config struct {
 	includePatterns   []string
 	includedPathsFile string
 	excludedPathsFile string
+	instruction       string
 	addToClipboard    bool
 	showVersion       bool
 }
@@ -105,6 +106,7 @@ func parseFlags() (*config, error) {
 	includeStr := flag.String("include", "", "Comma-separated list of regular expressions. *Only* paths matching these are *included*.")
 	flag.StringVar(&cfg.includedPathsFile, "included-paths-file", "", "Saves the list of *included* paths to this file.")
 	flag.StringVar(&cfg.excludedPathsFile, "excluded-paths-file", "", "Saves the list of *excluded* paths to this file.")
+	flag.StringVar(&cfg.instruction, "instruction", "", "Optional text to prepend to the generated Markdown file.")
 	flag.BoolVar(&cfg.addToClipboard, "clipboard", false, "Copies the generated Markdown to the clipboard.")
 	flag.BoolVar(&cfg.showVersion, "version", false, "Displays the version and exits.")
 	// var helpFlag bool
@@ -153,6 +155,9 @@ func setupLogging(cfg *config) *log.Logger {
 	}
 	if cfg.excludedPathsFile != "" {
 		logger.Println("Excluded paths will be saved to:", cfg.excludedPathsFile)
+	}
+	if cfg.instruction != "" {
+		logger.Println("Instruction text provided.")
 	}
 	if cfg.addToClipboard {
 		logger.Println("Result will be copied to clipboard.")
@@ -221,6 +226,12 @@ func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers []*regexp.Reg
 	contentMarkdown, processedPaths, excludedPaths, err := contentBuilder.buildContentString()
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to build code content: %w", err)
+	}
+
+	// --- Prepend Instruction if present ---
+	if cfg.instruction != "" {
+		fullMarkdown.WriteString(cfg.instruction)
+		fullMarkdown.WriteString("\n\n")
 	}
 
 	// --- Build Tree View using processedPaths ---
@@ -524,6 +535,7 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  codeweaver -input my_project -output docs.md # Specify input and output\n")
 	fmt.Fprintf(os.Stderr, `  codeweaver -ignore "build/,vendor/" -include "\.go$,\.md$" # Filter paths`+"\n")
 	fmt.Fprintf(os.Stderr, "  codeweaver -clipboard -excluded-paths-file ignored.txt # Copy & log excluded\n")
+	fmt.Fprintf(os.Stderr, "  codeweaver -instruction \"Please analyze this code.\" # Add instruction at top\n")
 	fmt.Fprintf(os.Stderr, "\nNotes on patterns:\n")
 	fmt.Fprintf(os.Stderr, "  - Patterns are Go regular expressions (https://pkg.go.dev/regexp/syntax).\n")
 	fmt.Fprintf(os.Stderr, "  - Paths for filtering are relative to the input directory (e.g., \"src/main.go\").\n")

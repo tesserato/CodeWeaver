@@ -145,6 +145,9 @@ func runMainLogic(args []string, outputDir string) (string, error) {
 	if cfg.excludedPathsFile != "" {
 		testRunLogger.Println("Excluded paths will be saved to:", filepath.Join(outputDir, cfg.excludedPathsFile))
 	}
+	if cfg.instruction != "" {
+		testRunLogger.Println("Instruction text provided.")
+	}
 	if cfg.addToClipboard {
 		testRunLogger.Println("Result will be copied to clipboard.")
 	}
@@ -280,6 +283,7 @@ func TestParseFlags(t *testing.T) {
 			"-include", "c,d",
 			"-included-paths-file", "inc.txt",
 			"-excluded-paths-file", "exc.txt",
+			"-instruction", "Hello Instruction",
 			"-clipboard",
 		}
 		logOutput, err := runParse(t, args)
@@ -300,6 +304,9 @@ func TestParseFlags(t *testing.T) {
 		}
 		if !strings.Contains(logOutput, "Excluded paths will be saved to:") || !strings.Contains(logOutput, "exc.txt") {
 			t.Errorf("Set excludedPathsFile logging mismatch. Log:\n%s", logOutput)
+		}
+		if !strings.Contains(logOutput, "Instruction text provided.") {
+			t.Errorf("Set instruction logging mismatch. Log:\n%s", logOutput)
 		}
 		if !strings.Contains(logOutput, "Result will be copied to clipboard.") {
 			t.Errorf("Set clipboard logging mismatch. Log:\n%s", logOutput)
@@ -658,7 +665,7 @@ func TestPrintHelp(t *testing.T) {
 			if !strings.Contains(output, "Options:") {
 				t.Errorf("Help for '%s' missing 'Options:'. Output:\n%s", helpArg, output)
 			}
-			expectedFlags := []string{"-input string", "-output string", "-ignore string", "-clipboard"}
+			expectedFlags := []string{"-input string", "-output string", "-ignore string", "-clipboard", "-instruction string"}
 			for _, flagSig := range expectedFlags {
 				if !strings.Contains(output, " "+flagSig) {
 					t.Errorf("Help for '%s' missing flag '%s'. Output:\n%s", helpArg, flagSig, output)
@@ -785,6 +792,33 @@ func TestMainExecutionFlows(t *testing.T) {
 		}
 	})
 
+	t.Run("Run_WithInstruction", func(t *testing.T) {
+		testOutputDir := t.TempDir()
+		outputFileName := "instruction_run.md"
+		instructionText := "This is a prompt instruction."
+		args := []string{
+			"-input", baseInputDir,
+			"-output", outputFileName,
+			"-instruction", instructionText,
+		}
+		logOutput, err := runMainLogic(args, testOutputDir)
+		if err != nil {
+			t.Fatalf("Run failed: %v. Log:\n%s", err, logOutput)
+		}
+
+		expectedOutputPath := filepath.Join(testOutputDir, outputFileName)
+		generatedMdBytes, readErr := os.ReadFile(expectedOutputPath)
+		if readErr != nil {
+			t.Fatalf("Failed to read generated markdown file: %v", readErr)
+		}
+		generatedMd := string(generatedMdBytes)
+
+		// Check if instruction is at the beginning
+		if !strings.HasPrefix(generatedMd, instructionText+"\n\n# Tree View:") {
+			t.Errorf("Instruction text not found at the beginning of the file.\nFile Start:\n%s...", generatedMd[:min(len(generatedMd), 100)])
+		}
+	})
+
 	// ... (other TestMainExecutionFlows like VersionFlag, HelpFlag, Error_InvalidPatterns, etc. can remain similar,
 	//      just ensure they use testOutputDir for runMainLogic) ...
 	// t.Run("VersionFlag", func(t *testing.T) {
@@ -812,4 +846,11 @@ func TestMainExecutionFlows(t *testing.T) {
 	// 	}
 	// })
 
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
