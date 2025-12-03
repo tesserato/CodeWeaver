@@ -48,7 +48,8 @@ func createTestFS(t *testing.T) (string, func()) {
 		"empty_dir/":                    "",
 		"docs/sub_docs/file_in_sub.txt": "nested doc content",
 		"other.log":                     "another log",
-		"empty_file.txt":                "", // Explicitly empty file
+		"empty_file.txt":                "",                                                             // Explicitly empty file
+		"doc_with_ticks.md":             "Here is a code block:\n```go\nfmt.Println(\"Hi\")\n```\nEnd.", // File with 3 backticks
 	}
 	for relPath, content := range structure {
 		absPath := filepath.Join(rootDir, relPath)
@@ -384,6 +385,7 @@ func TestTreeBuilder(t *testing.T) {
 				"README.md",
 				"build/output.exe", "build/tmp/log.txt",
 				"data/config.yaml", "data/image.png",
+				"doc_with_ticks.md", // New file
 				"docs/sub_docs/file_in_sub.txt",
 				// "empty_dir", // Dirs are not in processedPaths
 				"file1.txt", "empty_file.txt",
@@ -396,6 +398,7 @@ func TestTreeBuilder(t *testing.T) {
 				"├── README.md",
 				"├── build", "│   ├── output.exe", "│   └── tmp", "│       └── log.txt",
 				"├── data", "│   ├── config.yaml", "│   └── image.png",
+				"├── doc_with_ticks.md",
 				"├── docs", "│   └── sub_docs", "│       └── file_in_sub.txt",
 				// "├── empty_dir", // Should NOT appear
 				"├── empty_file.txt",
@@ -506,14 +509,16 @@ func TestContentBuilder(t *testing.T) {
 		expectedExcludedPaths            []string // All files AND DIRS that failed filters
 		expectEmptyFileSkippedInContent  bool     // If an empty file should be processed but not in content markdown
 		expectBinaryFileSkippedInContent bool     // If a binary file should be processed but not in content markdown
+		dynamicFenceCheck                bool     // If true, check for dynamic fencing on doc_with_ticks.md
 	}{
 		{
 			name:                  "NoFilters_AllProcessed_ContentForAllNonEmpty",
-			expectedContentSubstr: "## file1.txt\n```txt\ncontent of file1\n```",
+			expectedContentSubstr: "## file1.txt\n\n```txt\ncontent of file1\n```",
 			expectedProcessedPaths: []string{ // FILES ONLY
 				".git/HEAD", "README.md",
 				"build/output.exe", "build/tmp/log.txt",
 				"data/config.yaml", "data/image.png",
+				"doc_with_ticks.md",
 				"docs/sub_docs/file_in_sub.txt",
 				"empty_file.txt", "file1.txt",
 				"node_modules/dep/package.json",
@@ -522,12 +527,13 @@ func TestContentBuilder(t *testing.T) {
 			expectedExcludedPaths:            []string{},
 			expectEmptyFileSkippedInContent:  true,
 			expectBinaryFileSkippedInContent: true,
+			dynamicFenceCheck:                true,
 		},
 		{
 			name:                   "IncludeOnlyGoAndMdFiles",
 			includeMatchers:        []*regexp.Regexp{mustCompileRegex(`\.go$`), mustCompileRegex(`\.md$`)},
-			expectedContentSubstr:  "## script.go\n```go\npackage main", // README content also present
-			expectedProcessedPaths: []string{"README.md", "script.go"},  // Only these files pass
+			expectedContentSubstr:  "## script.go\n\n```go\npackage main",                   // README content also present
+			expectedProcessedPaths: []string{"README.md", "doc_with_ticks.md", "script.go"}, // Only these files pass
 			expectedExcludedPaths: []string{ // All other files and dirs
 				".git", ".git/HEAD",
 				"build", "build/output.exe", "build/tmp", "build/tmp/log.txt",
@@ -542,13 +548,14 @@ func TestContentBuilder(t *testing.T) {
 			name:                   "IgnoreGitDir_IncludeTxtFiles",
 			ignoreMatchers:         []*regexp.Regexp{mustCompileRegex(`^\.git(/.*)?$`)}, // Ignore .git dir and its contents
 			includeMatchers:        []*regexp.Regexp{mustCompileRegex(`\.txt$`)},
-			expectedContentSubstr:  "## file1.txt\n```txt\ncontent of file1\n```",
+			expectedContentSubstr:  "## file1.txt\n\n```txt\ncontent of file1\n```",
 			expectedProcessedPaths: []string{"build/tmp/log.txt", "docs/sub_docs/file_in_sub.txt", "empty_file.txt", "file1.txt"},
 			expectedExcludedPaths: []string{
 				".git", ".git/HEAD", // Explicitly ignored
 				"README.md", "script.go", "other.log", // Not .txt
 				"build", "build/output.exe", "build/tmp", // Dirs not .txt, output.exe not .txt
 				"data", "data/config.yaml", "data/image.png", // Not .txt
+				"doc_with_ticks.md",     // Not .txt
 				"docs", "docs/sub_docs", // Dirs not .txt
 				"empty_dir",                                                         // Dir not .txt
 				"node_modules", "node_modules/dep", "node_modules/dep/package.json", // Not .txt
@@ -563,6 +570,7 @@ func TestContentBuilder(t *testing.T) {
 				".git", ".git/HEAD", "README.md", "script.go", "other.log",
 				"build", "build/output.exe", "build/tmp", "build/tmp/log.txt",
 				"data", "data/config.yaml", "data/image.png",
+				"doc_with_ticks.md",
 				"docs", "docs/sub_docs", "docs/sub_docs/file_in_sub.txt",
 				"empty_dir", "file1.txt",
 				"node_modules", "node_modules/dep", "node_modules/dep/package.json",
@@ -596,6 +604,15 @@ func TestContentBuilder(t *testing.T) {
 			if tc.expectBinaryFileSkippedInContent {
 				if strings.Contains(actualContentStr, "## build/output.exe") {
 					t.Errorf("Binary file 'build/output.exe' was found in markdown content, but should have been skipped.")
+				}
+			}
+
+			// Validate dynamic fencing for doc_with_ticks.md
+			if tc.dynamicFenceCheck {
+				// doc_with_ticks.md has 3 backticks, so fence should be 4 backticks
+				expectedFenceStart := "\n````md\n"
+				if !strings.Contains(actualContentStr, expectedFenceStart) {
+					t.Errorf("Dynamic fencing mismatch. Expected 4 backticks for doc_with_ticks.md.\nActual Content fragment:\n%s", actualContentStr)
 				}
 			}
 
@@ -763,7 +780,6 @@ func TestMainExecutionFlows(t *testing.T) {
 		}
 		// Excluded should contain .go (script.go), .log (other.log), .exe (build/output.exe), .yaml (data/config.yaml), .png (data/image.png), .json (node_modules/dep/package.json)
 		// .git dir contents are ignored via regex "^\.git", but directory handling might affect if files inside are reached?
-		// "^\.git(/.*)?" matches the directory itself. WalkDir might skip entering it depending on when we return nil?
 		// Code logic: if excluded, we return nil. So if .git matches, we don't scan inside. Thus no extensions from inside .git.
 		// However, files like script.go are definitely excluded.
 		if !strings.Contains(logOutput, "Excluded extensions:") || !strings.Contains(logOutput, ".go") || !strings.Contains(logOutput, ".exe") {

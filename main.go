@@ -29,8 +29,6 @@ const (
 	mdCodeBlockEnd    = "\n```\n"
 	mdContentHeader   = "\n# Content:\n"
 	mdFileHeaderStart = "\n## "
-	mdCodeBlockStart  = "\n```"
-	mdCodeBlockEndNL  = "\n```\n\n"
 )
 const (
 	rgxLogPrefixIgnore  = "- RGX:"
@@ -457,7 +455,8 @@ func (cb *contentBuilder) buildContentString() (
 		fileContent, readErr := os.ReadFile(currentWalkPath)
 		if readErr != nil {
 			cb.logger.Printf("%sWarning: Failed to read file %s: %v%s\n", colorRed, currentWalkPath, readErr, colorReset)
-			contentSB.WriteString(fmt.Sprintf("%s%s\n%s\nError reading file: %v%s", mdFileHeaderStart, pathRelToInput, mdCodeBlockStart, readErr, mdCodeBlockEndNL))
+			// For error cases, we'll default to standard fencing (3 backticks)
+			contentSB.WriteString(fmt.Sprintf("%s%s\n```\nError reading file: %v\n```\n\n", mdFileHeaderStart, pathRelToInput, readErr))
 			return nil // File processed (passed filters), but content not added
 		}
 
@@ -472,12 +471,20 @@ func (cb *contentBuilder) buildContentString() (
 			return nil
 		}
 
-		// Add file content to markdown
+		// Add file content to markdown with Dynamic Fencing
 		extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(currentWalkPath)), ".")
-		contentSB.WriteString(fmt.Sprintf("%s%s", mdFileHeaderStart, pathRelToInput))
-		contentSB.WriteString(fmt.Sprintf("%s%s\n", mdCodeBlockStart, extension))
+		maxBackticks := countMaxBackticks(fileContent)
+		fenceLen := 3
+		if maxBackticks >= 3 {
+			fenceLen = maxBackticks + 1
+		}
+		fence := strings.Repeat("`", fenceLen)
+
+		contentSB.WriteString(fmt.Sprintf("%s%s\n", mdFileHeaderStart, pathRelToInput))
+		contentSB.WriteString(fmt.Sprintf("\n%s%s\n", fence, extension))
 		contentSB.Write(fileContent)
-		contentSB.WriteString(mdCodeBlockEndNL)
+		contentSB.WriteString(fmt.Sprintf("\n%s\n\n", fence))
+
 		return nil
 	})
 
@@ -515,6 +522,26 @@ func isBinary(content []byte) bool {
 		checkLen = maxBytesToCheck
 	}
 	return bytes.IndexByte(content[:checkLen], 0) != -1
+}
+
+// countMaxBackticks calculates the maximum number of consecutive backticks in the byte slice.
+func countMaxBackticks(content []byte) int {
+	maxCount := 0
+	currentCount := 0
+	for _, b := range content {
+		if b == '`' {
+			currentCount++
+		} else {
+			if currentCount > maxCount {
+				maxCount = currentCount
+			}
+			currentCount = 0
+		}
+	}
+	if currentCount > maxCount {
+		maxCount = currentCount
+	}
+	return maxCount
 }
 
 func shouldProcess(pathRelToInput string, ignoreMatchers, includeMatchers []*regexp.Regexp) bool {
