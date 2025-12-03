@@ -1,3 +1,6 @@
+// Package main implements CodeWeaver, a command-line tool that transforms a codebase
+// into a single, navigable Markdown document. It generates a tree view of the file
+// structure and embeds the content of each file within markdown code blocks.
 package main
 
 import (
@@ -17,6 +20,8 @@ import (
 )
 
 // --- Constants ---
+
+// ANSI color codes for terminal output formatting.
 const (
 	colorRed       = "\033[31m"
 	colorLiteRed   = "\033[91m"
@@ -27,23 +32,32 @@ const (
 	colorBold      = "\033[1m"
 	colorReset     = "\033[0m"
 )
+
+// Markdown formatting constants.
 const (
 	mdTreeViewHeader  = "# Tree View:\n```\n"
 	mdCodeBlockEnd    = "\n```\n"
 	mdContentHeader   = "\n# Content:\n"
 	mdFileHeaderStart = "\n## "
-	// mdCodeBlockStart and mdCodeBlockEndNL are replaced by dynamic generation
+	// mdCodeBlockStart and mdCodeBlockEndNL are replaced by dynamic generation logic.
 )
+
+// Log prefixes for pattern matching output.
 const (
 	rgxLogPrefixIgnore  = "- RGX:"
 	rgxLogPrefixInclude = "+ RGX:"
 )
+
+// Log prefixes for file processing status.
 const (
 	logPrefixExclude = "-"
 	logPrefixInclude = "+"
 )
 
 // --- Main Execution ---
+
+// main is the entry point of the application. It orchestrates the configuration parsing,
+// logging setup, regex compilation, markdown generation, and output writing.
 func main() {
 
 	// 1. Parse Configuration
@@ -56,7 +70,8 @@ func main() {
 		os.Exit(2)
 	}
 
-	for _, arg := range os.Args[1:] { // Check args excluding the program name
+	// Check args excluding the program name for help flags explicitly
+	for _, arg := range os.Args[1:] {
 		arg_lower := strings.ToLower(arg)
 		if arg_lower == "-help" || arg_lower == "--help" || arg_lower == "h" || arg_lower == "-h" || arg_lower == "help" {
 			printHelp()
@@ -70,7 +85,7 @@ func main() {
 		logger.Fatalf("%sError compiling regex patterns: %v%s", colorRed, err, colorReset)
 	}
 
-	// generateMarkdown now orchestrates content and tree generation based on single processing pass
+	// generateMarkdown now orchestrates content and tree generation based on a single processing pass
 	finalMarkdownString, pathsForIncludedFile, pathsForExcludedFile, err := generateMarkdown(cfg, ignoreMatchers, includeMatchers, logger)
 	if err != nil {
 		logger.Fatalf("%sError generating markdown: %v%s", colorRed, err, colorReset)
@@ -84,10 +99,12 @@ func main() {
 	logger.Printf("%sCodeWeaver finished successfully.%s", colorGreen, colorReset)
 }
 
+// isFlagHelpError checks if the error returned by flag.Parse is due to a request for help.
 func isFlagHelpError(err error) bool {
 	return err != nil && err.Error() == "flag: help requested"
 }
 
+// config holds the runtime configuration options parsed from command-line arguments.
 type config struct {
 	inputDirOriginal  string
 	inputDirAbs       string
@@ -101,6 +118,8 @@ type config struct {
 	showVersion       bool
 }
 
+// parseFlags defines and parses the command-line flags. It validates the input directory
+// and returns a populated config struct or an error.
 func parseFlags() (*config, error) {
 	cfg := &config{}
 	flag.StringVar(&cfg.inputDirOriginal, "input", ".", "The root directory to scan.")
@@ -112,9 +131,8 @@ func parseFlags() (*config, error) {
 	flag.StringVar(&cfg.instruction, "instruction", "", "Optional text to prepend to the generated Markdown file.")
 	flag.BoolVar(&cfg.addToClipboard, "clipboard", false, "Copies the generated Markdown to the clipboard.")
 	flag.BoolVar(&cfg.showVersion, "version", false, "Displays the version and exits.")
-	// var helpFlag bool
-	// flag.BoolVar(&helpFlag, "h", false, "Displays help message and exits.")
 
+	// Override default Usage to print custom help
 	flag.Usage = func() { printHelp(); os.Exit(0) }
 	err := flag.CommandLine.Parse(os.Args[1:])
 	if err != nil {
@@ -148,6 +166,7 @@ func parseFlags() (*config, error) {
 	return cfg, nil
 }
 
+// setupLogging initializes the logger and prints the startup configuration.
 func setupLogging(cfg *config) *log.Logger {
 	logger := log.New(os.Stdout, "", 0)
 	logger.Println("Starting CodeWeaver...")
@@ -170,6 +189,7 @@ func setupLogging(cfg *config) *log.Logger {
 	return logger
 }
 
+// compileMatchers compiles the provided string patterns into regular expressions.
 func compileMatchers(cfg *config, logger *log.Logger) (ignore, include []*regexp.Regexp, err error) {
 	logger.Println("Compiling ignore patterns:")
 	ignore, err = compileRegexList(cfg.ignorePatterns, colorLiteRed, rgxLogPrefixIgnore, logger)
@@ -185,6 +205,7 @@ func compileMatchers(cfg *config, logger *log.Logger) (ignore, include []*regexp
 	return
 }
 
+// compileRegexList is a helper that compiles a slice of regex strings, logging each one.
 func compileRegexList(patterns []string, color, prefix string, logger *log.Logger) ([]*regexp.Regexp, error) {
 	if len(patterns) == 0 {
 		logger.Printf("  (No patterns provided)")
@@ -215,7 +236,11 @@ func compileRegexList(patterns []string, color, prefix string, logger *log.Logge
 // --- Markdown Generation ---
 
 // generateMarkdown orchestrates the creation of the tree view and content sections.
-// It now calls contentBuilder first, then uses its results for the treeBuilder.
+// It adopts a two-pass approach:
+//  1. Content Generation: Scans files, applies filters, and builds the content markdown.
+//     This step identifies exactly which files are "included".
+//  2. Tree Generation: Builds the directory tree using ONLY the files identified in step 1.
+//     This ensures that directories which become empty due to filtering are not shown.
 func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers []*regexp.Regexp, logger *log.Logger) (
 	finalMarkdown string, processedPathsForFile []string, excludedPathsForFile []string, err error) {
 
@@ -267,6 +292,7 @@ func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers []*regexp.Reg
 
 // --- Tree Builder ---
 
+// treeBuilder is responsible for generating the visual directory tree structure.
 type treeBuilder struct {
 	rootAbsPath       string
 	processedPathsSet map[string]struct{} // Set of paths that passed filters (from contentBuilder)
@@ -274,7 +300,7 @@ type treeBuilder struct {
 	depthOpen         map[int]bool
 }
 
-// newTreeBuilder creates a new tree builder instance, now taking processedPathsSet.
+// newTreeBuilder creates a new tree builder instance, taking the set of processed paths to filter the tree.
 func newTreeBuilder(rootAbsPath string, processedPathsSet map[string]struct{}) *treeBuilder {
 	return &treeBuilder{
 		rootAbsPath:       rootAbsPath,
@@ -283,11 +309,14 @@ func newTreeBuilder(rootAbsPath string, processedPathsSet map[string]struct{}) *
 	}
 }
 
+// buildTreeString initiates the recursive tree building process and returns the result string.
 func (tb *treeBuilder) buildTreeString() (string, error) {
 	err := tb.printTreeRecursive(tb.rootAbsPath, 0)
 	return tb.output.String(), err
 }
 
+// printTreeRecursive traverses the directory structure. It only includes entries that
+// are present in processedPathsSet or are directories containing such entries.
 func (tb *treeBuilder) printTreeRecursive(currentDirPath string, depth int) error {
 	entries, err := os.ReadDir(currentDirPath)
 	if err != nil {
@@ -340,6 +369,7 @@ func (tb *treeBuilder) printTreeRecursive(currentDirPath string, depth int) erro
 	return nil
 }
 
+// printEntryLine formats and appends a single line of the tree view (e.g., ├── filename).
 func (tb *treeBuilder) printEntryLine(entry fs.DirEntry, depth int, isLast bool) {
 	var prefix strings.Builder
 	for i := 0; i < depth; i++ {
@@ -357,6 +387,7 @@ func (tb *treeBuilder) printEntryLine(entry fs.DirEntry, depth int, isLast bool)
 	tb.output.WriteString(prefix.String() + entry.Name() + "\n")
 }
 
+// getRelativePath calculates the path relative to the root input directory and ensures forward slashes.
 func (tb *treeBuilder) getRelativePath(fullPath string) (string, error) {
 	pathRelToInput, err := filepath.Rel(tb.rootAbsPath, fullPath)
 	if err != nil {
@@ -367,21 +398,24 @@ func (tb *treeBuilder) getRelativePath(fullPath string) (string, error) {
 
 // --- Content Builder ---
 
+// contentBuilder handles scanning the directory, filtering files, reading content,
+// and formatting it into Markdown.
 type contentBuilder struct {
 	rootAbsPath, includedPathsFile, excludedPathsFile string
 	ignoreMatchers, includeMatchers                   []*regexp.Regexp
 	logger                                            *log.Logger
 }
 
+// newContentBuilder initializes a new contentBuilder.
 func newContentBuilder(rootAbsPath, includedPathsFile, excludedPathsFile string, ignoreMatchers, includeMatchers []*regexp.Regexp, logger *log.Logger) *contentBuilder {
 	return &contentBuilder{rootAbsPath, includedPathsFile, excludedPathsFile, ignoreMatchers, includeMatchers, logger}
 }
 
-// buildContentString now returns:
-// 1. markdown string for file contents
-// 2. allProcessedPaths (files only, directories are skipped to prune empty dirs from tree)
-// 3. excludedPaths (files AND dirs that failed shouldProcess)
-// 4. error
+// buildContentString scans the directory and returns:
+// 1. markdownContent: The combined markdown string for file contents.
+// 2. allProcessedPaths: List of files that passed filters (used for tree building).
+// 3. excludedPaths: List of files/dirs that failed filters.
+// 4. err: Any error encountered.
 func (cb *contentBuilder) buildContentString() (
 	markdownContent string, allProcessedPaths []string, excludedPaths []string, err error) {
 
@@ -505,6 +539,7 @@ func (cb *contentBuilder) buildContentString() (
 	return contentSB.String(), localProcessedPaths, localExcludedPaths, nil
 }
 
+// printExtensionSummary logs a sorted list of file extensions found during processing.
 func printExtensionSummary(extMap map[string]struct{}, color, label string, logger *log.Logger) {
 	if len(extMap) == 0 {
 		return
@@ -529,6 +564,7 @@ func isBinary(content []byte) bool {
 }
 
 // countMaxBackticks calculates the maximum number of consecutive backticks in the byte slice.
+// This is used to determine the length of the markdown code block fence.
 func countMaxBackticks(content []byte) int {
 	maxCount := 0
 	currentCount := 0
@@ -548,6 +584,8 @@ func countMaxBackticks(content []byte) int {
 	return maxCount
 }
 
+// shouldProcess determines whether a file path should be processed based on the
+// provided ignore and include regex matchers.
 func shouldProcess(pathRelToInput string, ignoreMatchers, includeMatchers []*regexp.Regexp) bool {
 	for _, pattern := range ignoreMatchers {
 		if pattern != nil && pattern.MatchString(pathRelToInput) {
@@ -569,6 +607,8 @@ func shouldProcess(pathRelToInput string, ignoreMatchers, includeMatchers []*reg
 	return true
 }
 
+// writeOutput writes the generated markdown to the output file, saves included/excluded path lists,
+// and optionally copies the result to the clipboard.
 func writeOutput(cfg *config, markdownContent string, includedPaths, excludedPaths []string, logger *log.Logger) error {
 	outputFileSlash := filepath.ToSlash(cfg.outputFile)
 	logger.Printf("Writing output to %s...", outputFileSlash)
@@ -603,6 +643,7 @@ func writeOutput(cfg *config, markdownContent string, includedPaths, excludedPat
 	return nil
 }
 
+// savePathsToFile writes a list of file paths to the specified file, sorted alphabetically.
 func savePathsToFile(filename string, paths []string, logger *log.Logger) error {
 	if len(paths) == 0 {
 		logger.Printf("No paths to save to %s.", filepath.ToSlash(filename))
@@ -623,6 +664,7 @@ func savePathsToFile(filename string, paths []string, logger *log.Logger) error 
 	return nil
 }
 
+// printHelp displays the application's usage information, available flags, and examples.
 func printHelp() {
 	// Header
 	fmt.Fprintf(os.Stderr, "%s%sCodeWeaver%s: Generate Markdown Documentation from Your Codebase.\n\n", colorBold, colorGreen, colorReset)

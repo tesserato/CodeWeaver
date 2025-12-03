@@ -20,6 +20,8 @@ import (
 
 // --- Test Helpers (keep previous helpers like mustCompileRegex, normalizeNewlines, etc.) ---
 
+// mustCompileRegex compiles a regex string and panics on error.
+// Useful for initializing static regexes in test cases.
 func mustCompileRegex(pattern string) *regexp.Regexp {
 	if pattern == "" {
 		return nil
@@ -31,8 +33,11 @@ func mustCompileRegex(pattern string) *regexp.Regexp {
 	return r
 }
 
+// normalizeNewlines replaces carriage returns with newlines to ensure consistent comparisons across OS.
 func normalizeNewlines(s string) string { return strings.ReplaceAll(s, "\r\n", "\n") }
 
+// createTestFS creates a temporary file system structure for testing.
+// It returns the root directory path and a cleanup function.
 func createTestFS(t *testing.T) (string, func()) {
 	t.Helper()
 	rootDir := t.TempDir()
@@ -71,6 +76,7 @@ func createTestFS(t *testing.T) (string, func()) {
 	return rootDir, func() {}
 }
 
+// equalStringSlices checks if two string slices contain the same elements (order independent).
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -85,9 +91,8 @@ func equalStringSlices(a, b []string) bool {
 	return true
 }
 
-// runMainLogic - Keep this helper as it's useful for testing *internal* logic flows
-// and error handling paths without the overhead of compilation for every case.
-// ... (runMainLogic implementation needs minor adjustment for how it calls generateMarkdown if its signature changed, but the core flag parsing remains the same) ...
+// runMainLogic simulates the execution of the main program for integration testing.
+// It sets up flags, captures logs, and avoids exiting the process on error.
 func runMainLogic(args []string, outputDir string) (string, error) {
 	originalArgs := os.Args
 	os.Args = append([]string{"codeweaver"}, args...)
@@ -204,6 +209,7 @@ func runMainLogic(args []string, outputDir string) (string, error) {
 
 // --- Test Suite ---
 
+// TestShouldProcess validates the file filtering logic based on ignore and include patterns.
 func TestShouldProcess(t *testing.T) {
 	// This test remains the same as it tests the standalone filtering logic.
 	testCases := []struct {
@@ -228,6 +234,7 @@ func TestShouldProcess(t *testing.T) {
 	}
 }
 
+// TestParseFlags validates command-line flag parsing, including defaults and error conditions.
 func TestParseFlags(t *testing.T) {
 	runParse := func(t *testing.T, args []string) (string, error) {
 		t.Helper()
@@ -346,6 +353,8 @@ func TestParseFlags(t *testing.T) {
 	})
 }
 
+// TestCompileRegexPatterns verifies that valid regex patterns are compiled correctly
+// and invalid ones return appropriate errors.
 func TestCompileRegexPatterns(t *testing.T) {
 	// This test remains largely the same as it tests regex compilation.
 	testLogger := log.New(io.Discard, "", 0)
@@ -368,7 +377,9 @@ func TestCompileRegexPatterns(t *testing.T) {
 	})
 }
 
-// TestTreeBuilder now focuses on tree construction given a set of processed paths.
+// TestTreeBuilder verifies the tree construction logic, ensuring that filters
+// applied during content generation are correctly reflected in the tree structure
+// (e.g., hiding empty directories).
 func TestTreeBuilder(t *testing.T) {
 	rootDir, cleanup := createTestFS(t) // Create our standard test file system
 	defer cleanup()
@@ -494,7 +505,8 @@ func TestTreeBuilder(t *testing.T) {
 	}
 }
 
-// TestContentBuilder focuses on the output of contentBuilder: markdown content, processed paths, and excluded paths.
+// TestContentBuilder verifies the content generation pass.
+// It checks correct path filtering, exclusion of binary/empty files, and correct markdown formatting.
 func TestContentBuilder(t *testing.T) {
 	rootDir, cleanup := createTestFS(t)
 	defer cleanup()
@@ -629,6 +641,7 @@ func TestContentBuilder(t *testing.T) {
 	}
 }
 
+// TestSavePathsToFile verifies the helper function for saving path lists.
 func TestSavePathsToFile(t *testing.T) {
 	// This test remains largely the same.
 	testLogger := log.New(io.Discard, "", 0)
@@ -698,7 +711,8 @@ func TestPrintHelp(t *testing.T) {
 	}
 }
 
-// TestMainExecutionFlows needs careful review for path assertions.
+// TestMainExecutionFlows verifies full application flows, checking output files,
+// tree structure, and content integrity.
 func TestMainExecutionFlows(t *testing.T) {
 	baseInputDir, cleanupInput := createTestFS(t)
 	defer cleanupInput()
@@ -853,36 +867,9 @@ func TestMainExecutionFlows(t *testing.T) {
 			t.Errorf("Instruction text not found at the beginning of the file.\nFile Start:\n%s...", generatedMd[:min(len(generatedMd), 100)])
 		}
 	})
-
-	// ... (other TestMainExecutionFlows like VersionFlag, HelpFlag, Error_InvalidPatterns, etc. can remain similar,
-	//      just ensure they use testOutputDir for runMainLogic) ...
-	// t.Run("VersionFlag", func(t *testing.T) {
-	// 	testOutputDir := t.TempDir()
-	// 	logOutput, err := runMainLogic([]string{"-version"}, testOutputDir)
-	// 	if err != nil {
-	// 		t.Fatalf("runMainLogic with -version failed: %v", err)
-	// 	}
-	// 	expected := fmt.Sprintf("CodeWeaver version %s", version)
-	// 	if !strings.Contains(logOutput, expected) {
-	// 		t.Errorf("Expected '%s' in output, got:\n%s", expected, logOutput)
-	// 	}
-	// })
-
-	// t.Run("HelpFlag_via_runMainLogic", func(t *testing.T) { // Differentiate from binary test
-	// 	testOutputDir := t.TempDir()
-	// 	// Use -h for runMainLogic as it relies on flag package's default handling for Usage
-	// 	logOutput, err := runMainLogic([]string{"-h"}, testOutputDir)
-	// 	if !errors.Is(err, flag.ErrHelp) {
-	// 		t.Fatalf("runMainLogic with -h did not return flag.ErrHelp, got err: %v. Log:\n%s", err, logOutput)
-	// 	}
-	// 	// Check that printHelp was invoked (which is part of flag.Usage)
-	// 	if !strings.Contains(logOutput, "Usage: codeweaver [options]") {
-	// 		t.Errorf("Expected 'Usage:' in help output from runMainLogic, got:\n%s", logOutput)
-	// 	}
-	// })
-
 }
 
+// min returns the smaller of two integers.
 func min(a, b int) int {
 	if a < b {
 		return a
