@@ -41,7 +41,8 @@ func createTestFS(t *testing.T) (string, func()) {
 		"script.go": "package main\nfunc main() {}",
 		"README.md": "# Test Readme",
 		"data/":     "", "data/image.png": "fake png data", "data/config.yaml": "key: value",
-		"build/": "", "build/output.exe": "binary data", "build/tmp/": "", "build/tmp/log.txt": "log entry",
+		"build/": "", "build/output.exe": "binary\x00data", // Binary file with null byte
+		"build/tmp/": "", "build/tmp/log.txt": "log entry",
 		".git/": "", ".git/HEAD": "ref: refs/heads/main",
 		"node_modules/": "", "node_modules/dep/": "", "node_modules/dep/package.json": "{}",
 		"empty_dir/":                    "",
@@ -501,13 +502,14 @@ func TestContentBuilder(t *testing.T) {
 	testLogger := log.New(io.Discard, "", 0)
 
 	testCases := []struct {
-		name                            string
-		ignoreMatchers                  []*regexp.Regexp
-		includeMatchers                 []*regexp.Regexp
-		expectedContentSubstr           string   // Substring to find in generated markdown content
-		expectedProcessedPaths          []string // All files AND DIRS that passed filters
-		expectedExcludedPaths           []string // All files AND DIRS that failed filters
-		expectEmptyFileSkippedInContent bool     // If an empty file should be processed but not in content markdown
+		name                             string
+		ignoreMatchers                   []*regexp.Regexp
+		includeMatchers                  []*regexp.Regexp
+		expectedContentSubstr            string   // Substring to find in generated markdown content
+		expectedProcessedPaths           []string // All files AND DIRS that passed filters
+		expectedExcludedPaths            []string // All files AND DIRS that failed filters
+		expectEmptyFileSkippedInContent  bool     // If an empty file should be processed but not in content markdown
+		expectBinaryFileSkippedInContent bool     // If a binary file should be processed but not in content markdown
 	}{
 		{
 			name:                  "NoFilters_AllProcessed_ContentForAllNonEmpty",
@@ -521,8 +523,9 @@ func TestContentBuilder(t *testing.T) {
 				"node_modules", "node_modules/dep", "node_modules/dep/package.json",
 				"other.log", "script.go",
 			},
-			expectedExcludedPaths:           []string{},
-			expectEmptyFileSkippedInContent: true,
+			expectedExcludedPaths:            []string{},
+			expectEmptyFileSkippedInContent:  true,
+			expectBinaryFileSkippedInContent: true,
 		},
 		{
 			name:                   "IncludeOnlyGoAndMdFiles",
@@ -590,6 +593,13 @@ func TestContentBuilder(t *testing.T) {
 			if tc.expectEmptyFileSkippedInContent {
 				if strings.Contains(actualContentStr, "## empty_file.txt") {
 					t.Errorf("Empty file 'empty_file.txt' was found in markdown content, but should have been skipped.")
+				}
+			}
+
+			// Validate if binary file content was correctly skipped from markdown
+			if tc.expectBinaryFileSkippedInContent {
+				if strings.Contains(actualContentStr, "## build/output.exe") {
+					t.Errorf("Binary file 'build/output.exe' was found in markdown content, but should have been skipped.")
 				}
 			}
 

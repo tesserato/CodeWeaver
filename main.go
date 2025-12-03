@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -439,6 +440,12 @@ func (cb *contentBuilder) buildContentString() (
 			return nil
 		}
 
+		// Check for binary content
+		if isBinary(fileContent) {
+			cb.logger.Printf("Skipping binary file content: %s\n", pathRelToInput)
+			return nil
+		}
+
 		// Add file content to markdown
 		extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(currentWalkPath)), ".")
 		contentSB.WriteString(fmt.Sprintf("%s%s", mdFileHeaderStart, pathRelToInput))
@@ -452,6 +459,17 @@ func (cb *contentBuilder) buildContentString() (
 		return "", nil, nil, fmt.Errorf("walking directory %s: %w", cb.rootAbsPath, walkErr)
 	}
 	return contentSB.String(), localProcessedPaths, localExcludedPaths, nil
+}
+
+// isBinary checks if the content contains a null byte in the first 1024 bytes.
+// This is a standard heuristic to detect binary files.
+func isBinary(content []byte) bool {
+	const maxBytesToCheck = 1024
+	checkLen := len(content)
+	if checkLen > maxBytesToCheck {
+		checkLen = maxBytesToCheck
+	}
+	return bytes.IndexByte(content[:checkLen], 0) != -1
 }
 
 func shouldProcess(pathRelToInput string, ignoreMatchers, includeMatchers []*regexp.Regexp) bool {
