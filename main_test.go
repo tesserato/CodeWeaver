@@ -379,15 +379,15 @@ func TestTreeBuilder(t *testing.T) {
 	}{
 		{
 			name: "FullTree_AllPathsProcessed",
-			processedPaths: []string{ // Simulate all paths being processed by contentBuilder
-				".git", ".git/HEAD",
+			processedPaths: []string{ // Simulate all paths being processed by contentBuilder (FILES ONLY now)
+				".git/HEAD",
 				"README.md",
-				"build", "build/output.exe", "build/tmp", "build/tmp/log.txt",
-				"data", "data/config.yaml", "data/image.png",
-				"docs", "docs/sub_docs", "docs/sub_docs/file_in_sub.txt",
-				"empty_dir",
+				"build/output.exe", "build/tmp/log.txt",
+				"data/config.yaml", "data/image.png",
+				"docs/sub_docs/file_in_sub.txt",
+				// "empty_dir", // Dirs are not in processedPaths
 				"file1.txt", "empty_file.txt",
-				"node_modules", "node_modules/dep", "node_modules/dep/package.json",
+				"node_modules/dep/package.json",
 				"other.log",
 				"script.go",
 			},
@@ -397,7 +397,7 @@ func TestTreeBuilder(t *testing.T) {
 				"├── build", "│   ├── output.exe", "│   └── tmp", "│       └── log.txt",
 				"├── data", "│   ├── config.yaml", "│   └── image.png",
 				"├── docs", "│   └── sub_docs", "│       └── file_in_sub.txt",
-				"├── empty_dir",
+				// "├── empty_dir", // Should NOT appear
 				"├── empty_file.txt",
 				"├── file1.txt",
 				"├── node_modules", "│   └── dep", "│       └── package.json",
@@ -407,11 +407,9 @@ func TestTreeBuilder(t *testing.T) {
 		},
 		{
 			name: "PartialTree_OnlyGoAndMdFilesProcessed",
-			processedPaths: []string{ // Only .go and .md files (and their parent dirs for tree structure)
+			processedPaths: []string{ // Only .go and .md files
 				"README.md",
 				"script.go",
-				// Implicitly, parent directories like "." are needed for WalkDir to start
-				// but treeBuilder logic ensures parent dirs of processed files are shown.
 			},
 			expectedTreeLines: []string{
 				"├── README.md",
@@ -421,8 +419,8 @@ func TestTreeBuilder(t *testing.T) {
 		{
 			name: "PartialTree_SpecificFilesAndTheirDirs",
 			processedPaths: []string{
-				"docs", "docs/sub_docs", "docs/sub_docs/file_in_sub.txt", // file + its parent dirs
-				"data", "data/config.yaml", // file + its parent dir
+				"docs/sub_docs/file_in_sub.txt", // file
+				"data/config.yaml",              // file
 			},
 			expectedTreeLines: []string{
 				"├── data", "│   └── config.yaml",
@@ -430,13 +428,11 @@ func TestTreeBuilder(t *testing.T) {
 			},
 		},
 		{
-			name: "EmptyDir_WhenProcessed",
+			name:           "EmptyDir_WhenProcessed",
 			processedPaths: []string{
-				"empty_dir",
+				// "empty_dir", // Empty dir would not produce a processed path for a file
 			},
-			expectedTreeLines: []string{
-				"└── empty_dir",
-			},
+			expectedTreeLines: []string{}, // Expect empty tree
 		},
 		{
 			name:              "NoPathsProcessed",
@@ -506,7 +502,7 @@ func TestContentBuilder(t *testing.T) {
 		ignoreMatchers                   []*regexp.Regexp
 		includeMatchers                  []*regexp.Regexp
 		expectedContentSubstr            string   // Substring to find in generated markdown content
-		expectedProcessedPaths           []string // All files AND DIRS that passed filters
+		expectedProcessedPaths           []string // All FILES that passed filters (no directories)
 		expectedExcludedPaths            []string // All files AND DIRS that failed filters
 		expectEmptyFileSkippedInContent  bool     // If an empty file should be processed but not in content markdown
 		expectBinaryFileSkippedInContent bool     // If a binary file should be processed but not in content markdown
@@ -514,13 +510,13 @@ func TestContentBuilder(t *testing.T) {
 		{
 			name:                  "NoFilters_AllProcessed_ContentForAllNonEmpty",
 			expectedContentSubstr: "## file1.txt\n```txt\ncontent of file1\n```",
-			expectedProcessedPaths: []string{ // Includes dirs now
-				".git", ".git/HEAD", "README.md",
-				"build", "build/output.exe", "build/tmp", "build/tmp/log.txt",
-				"data", "data/config.yaml", "data/image.png",
-				"docs", "docs/sub_docs", "docs/sub_docs/file_in_sub.txt",
-				"empty_dir", "empty_file.txt", "file1.txt",
-				"node_modules", "node_modules/dep", "node_modules/dep/package.json",
+			expectedProcessedPaths: []string{ // FILES ONLY
+				".git/HEAD", "README.md",
+				"build/output.exe", "build/tmp/log.txt",
+				"data/config.yaml", "data/image.png",
+				"docs/sub_docs/file_in_sub.txt",
+				"empty_file.txt", "file1.txt",
+				"node_modules/dep/package.json",
 				"other.log", "script.go",
 			},
 			expectedExcludedPaths:            []string{},

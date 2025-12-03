@@ -223,7 +223,7 @@ func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers []*regexp.Reg
 	logger.Println("Processing paths and building content section...")
 	contentBuilder := newContentBuilder(cfg.inputDirAbs, cfg.includedPathsFile, cfg.excludedPathsFile, ignoreMatchers, includeMatchers, logger)
 	// contentMarkdown is the markdown string of file contents
-	// processedPaths contains ALL files AND directories that passed shouldProcess
+	// processedPaths contains ALL files that passed shouldProcess (directories are stripped for cleaner tree)
 	// excludedPaths contains all files/dirs that failed shouldProcess
 	contentMarkdown, processedPaths, excludedPaths, err := contentBuilder.buildContentString()
 	if err != nil {
@@ -377,7 +377,7 @@ func newContentBuilder(rootAbsPath, includedPathsFile, excludedPathsFile string,
 
 // buildContentString now returns:
 // 1. markdown string for file contents
-// 2. allProcessedPaths (files AND dirs that passed shouldProcess)
+// 2. allProcessedPaths (files only, directories are skipped to prune empty dirs from tree)
 // 3. excludedPaths (files AND dirs that failed shouldProcess)
 // 4. error
 func (cb *contentBuilder) buildContentString() (
@@ -416,17 +416,24 @@ func (cb *contentBuilder) buildContentString() (
 			return nil // Path excluded, continue walk
 		}
 
-		// Path passed filters, add to processedPaths
-		localProcessedPaths = append(localProcessedPaths, pathRelToInput)
-		// Log inclusion if not saving to file
+		// Log inclusion if not saving to file.
+		// Directories are logged without color to distinguish from files.
 		if cb.includedPathsFile == "" {
-			cb.logger.Printf("%s%s %s%s\n", colorGreen, logPrefixInclude, pathRelToInput, colorReset)
+			if d.IsDir() {
+				cb.logger.Printf("%s %s\n", logPrefixInclude, pathRelToInput)
+			} else {
+				cb.logger.Printf("%s%s %s%s\n", colorGreen, logPrefixInclude, pathRelToInput, colorReset)
+			}
 		}
 
-		// If it's a directory or an empty/unreadable file, don't add its content to markdown
+		// If it's a directory, don't add to processedPaths.
+		// This effectively removes "empty folders" (or folders with no included files) from the Tree View.
 		if d.IsDir() {
 			return nil // Continue into directory
 		}
+
+		// Path passed filters and is a file, add to processedPaths
+		localProcessedPaths = append(localProcessedPaths, pathRelToInput)
 
 		// Process file for content inclusion
 		fileContent, readErr := os.ReadFile(currentWalkPath)
