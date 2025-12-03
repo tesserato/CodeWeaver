@@ -757,6 +757,19 @@ func TestMainExecutionFlows(t *testing.T) {
 			t.Fatalf("Run failed: %v. Log:\n%s", err, logOutput)
 		}
 
+		// Check extension summary logic
+		if !strings.Contains(logOutput, "Included extensions: .md, .txt") {
+			t.Errorf("Missing/Incorrect included extension summary. Log:\n%s", logOutput)
+		}
+		// Excluded should contain .go (script.go), .log (other.log), .exe (build/output.exe), .yaml (data/config.yaml), .png (data/image.png), .json (node_modules/dep/package.json)
+		// .git dir contents are ignored via regex "^\.git", but directory handling might affect if files inside are reached?
+		// "^\.git(/.*)?" matches the directory itself. WalkDir might skip entering it depending on when we return nil?
+		// Code logic: if excluded, we return nil. So if .git matches, we don't scan inside. Thus no extensions from inside .git.
+		// However, files like script.go are definitely excluded.
+		if !strings.Contains(logOutput, "Excluded extensions:") || !strings.Contains(logOutput, ".go") || !strings.Contains(logOutput, ".exe") {
+			t.Errorf("Missing/Incorrect excluded extension summary. Log:\n%s", logOutput)
+		}
+
 		fullIncludedPath := filepath.Join(testOutputDir, includedFile)
 		fullExcludedPath := filepath.Join(testOutputDir, excludedFile)
 

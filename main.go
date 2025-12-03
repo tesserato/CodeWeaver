@@ -389,6 +389,10 @@ func (cb *contentBuilder) buildContentString() (
 	var localProcessedPaths []string
 	var localExcludedPaths []string
 
+	// Maps to store extensions
+	includedExtensions := make(map[string]struct{})
+	excludedExtensions := make(map[string]struct{})
+
 	walkErr := filepath.WalkDir(cb.rootAbsPath, func(currentWalkPath string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			cb.logger.Printf("%sWarning: Error accessing %s: %v%s\n", colorRed, currentWalkPath, walkErr, colorReset)
@@ -413,6 +417,14 @@ func (cb *contentBuilder) buildContentString() (
 				cb.logger.Printf("%s%s %s%s\n", colorRed, logPrefixExclude, pathRelToInput, colorReset)
 			}
 			localExcludedPaths = append(localExcludedPaths, pathRelToInput)
+			// Track extension for excluded file
+			if !d.IsDir() {
+				ext := strings.ToLower(filepath.Ext(pathRelToInput))
+				if ext == "" {
+					ext = "(no ext)"
+				}
+				excludedExtensions[ext] = struct{}{}
+			}
 			return nil // Path excluded, continue walk
 		}
 
@@ -434,6 +446,12 @@ func (cb *contentBuilder) buildContentString() (
 
 		// Path passed filters and is a file, add to processedPaths
 		localProcessedPaths = append(localProcessedPaths, pathRelToInput)
+		// Track extension for included file
+		ext := strings.ToLower(filepath.Ext(pathRelToInput))
+		if ext == "" {
+			ext = "(no ext)"
+		}
+		includedExtensions[ext] = struct{}{}
 
 		// Process file for content inclusion
 		fileContent, readErr := os.ReadFile(currentWalkPath)
@@ -463,10 +481,29 @@ func (cb *contentBuilder) buildContentString() (
 		return nil
 	})
 
+	// Print Extension Summary
+	if walkErr == nil {
+		cb.logger.Println()
+		printExtensionSummary(includedExtensions, colorGreen, "Included extensions:", cb.logger)
+		printExtensionSummary(excludedExtensions, colorRed, "Excluded extensions:", cb.logger)
+	}
+
 	if walkErr != nil {
 		return "", nil, nil, fmt.Errorf("walking directory %s: %w", cb.rootAbsPath, walkErr)
 	}
 	return contentSB.String(), localProcessedPaths, localExcludedPaths, nil
+}
+
+func printExtensionSummary(extMap map[string]struct{}, color, label string, logger *log.Logger) {
+	if len(extMap) == 0 {
+		return
+	}
+	exts := make([]string, 0, len(extMap))
+	for ext := range extMap {
+		exts = append(exts, ext)
+	}
+	sort.Strings(exts)
+	logger.Printf("%s%s %s%s\n", color, label, strings.Join(exts, ", "), colorReset)
 }
 
 // isBinary checks if the content contains a null byte in the first 1024 bytes.
