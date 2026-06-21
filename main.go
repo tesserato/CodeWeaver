@@ -19,6 +19,13 @@ import (
 	"golang.design/x/clipboard"
 )
 
+// version, commit, and date are stamped at build time by goreleaser via -X ldflags.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 // --- Constants ---
 
 // ANSI color codes for terminal output formatting.
@@ -39,7 +46,6 @@ const (
 	mdCodeBlockEnd    = "\n```\n"
 	mdContentHeader   = "\n# Content:\n"
 	mdFileHeaderStart = "\n## "
-	// mdCodeBlockStart and mdCodeBlockEndNL are replaced by dynamic generation logic.
 )
 
 // Log prefixes for pattern matching output.
@@ -53,6 +59,30 @@ const (
 	logPrefixExclude = "-"
 	logPrefixInclude = "+"
 )
+
+// defaultSensitivePatterns lists path patterns whose file CONTENTS are redacted by
+// default. The files still appear in the tree view and included-paths list — only
+// their body is replaced with a placeholder so secrets never reach the output.
+// Disable with -no-default-redact; force full inclusion with -unsafe-include-secrets.
+var defaultSensitivePatterns = []string{
+	`(^|/)\.env(\..*)?$`,
+	`(^|/)\.envrc$`,
+	`\.pem$`,
+	`\.key$`,
+	`\.pfx$`,
+	`\.p12$`,
+	`\.keystore$`,
+	`(^|/)id_(rsa|dsa|ecdsa|ed25519)(\.pub)?$`,
+	`(^|/)\.npmrc$`,
+	`(^|/)\.pypirc$`,
+	`(^|/)\.netrc$`,
+	`(^|/)credentials(\..*)?$`,
+	`(^|/)\.aws/`,
+	`(^|/)\.ssh/`,
+	`\.tfstate$`,
+	`\.tfvars$`,
+	`(^|/)secrets?\.(ya?ml|json|toml|ini)$`,
+}
 
 // --- Main Execution ---
 
@@ -75,8 +105,13 @@ func main() {
 		arg_lower := strings.ToLower(arg)
 		if arg_lower == "-help" || arg_lower == "--help" || arg_lower == "h" || arg_lower == "-h" || arg_lower == "help" {
 			printHelp()
-			os.Exit(0) // Exit successfully after showing help
+			os.Exit(0)
 		}
+	}
+
+	if cfg.showVersion {
+		fmt.Printf("CodeWeaver %s\ncommit: %s\nbuilt:  %s\n", version, commit, date)
+		os.Exit(0)
 	}
 
 	logger := setupLogging(cfg)
@@ -85,8 +120,16 @@ func main() {
 		logger.Fatalf("%sError compiling regex patterns: %v%s", colorRed, err, colorReset)
 	}
 
-	// generateMarkdown now orchestrates content and tree generation based on a single processing pass
-	finalMarkdownString, pathsForIncludedFile, pathsForExcludedFile, err := generateMarkdown(cfg, ignoreMatchers, includeMatchers, logger)
+	sensitiveMatchers, err := compileSensitiveMatchers(cfg)
+	if err != nil {
+		logger.Fatalf("%sError compiling sensitive patterns: %v%s", colorRed, err, colorReset)
+	}
+	if !cfg.unsafeIncludeSecrets && len(sensitiveMatchers) > 0 {
+		logger.Printf("%sSensitive content redaction active (%d patterns). Use -unsafe-include-secrets to disable.%s",
+			colorYellow, len(sensitiveMatchers), colorReset)
+	}
+
+	finalMarkdownString, pathsForIncludedFile, pathsForExcludedFile, err := generateMarkdown(cfg, ignoreMatchers, includeMatchers, sensitiveMatchers, logger)
 	if err != nil {
 		logger.Fatalf("%sError generating markdown: %v%s", colorRed, err, colorReset)
 	}
@@ -96,6 +139,8 @@ func main() {
 		logger.Fatalf("%sError writing output: %v%s", colorRed, err, colorReset)
 	}
 
+	byteCount := len(finalMarkdownString)
+	logger.Printf("Output: %d bytes (~%d tokens)", byteCount, byteCount/4)
 	logger.Printf("%sCodeWeaver finished successfully.%s", colorGreen, colorReset)
 }
 
@@ -106,16 +151,22 @@ func isFlagHelpError(err error) bool {
 
 // config holds the runtime configuration options parsed from command-line arguments.
 type config struct {
-	inputDirOriginal  string
-	inputDirAbs       string
-	outputFile        string
-	ignorePatterns    []string
-	includePatterns   []string
-	includedPathsFile string
-	excludedPathsFile string
-	instruction       string
-	addToClipboard    bool
-	showVersion       bool
+	inputDirOriginal    string
+	inputDirAbs         string
+	outputFile          string
+	ignorePatterns      []string
+	includePatterns     []string
+	includedPathsFile   string
+	excludedPathsFile   string
+	instruction         string
+	addToClipboard      bool
+	showVersion         bool
+	redactPatterns      []string
+	noDefaultRedact     bool
+	unsafeIncludeSecrets bool
+	maxFileSizeBytes    int64
+	rootMarker          string
+	here                bool
 }
 
 // parseFlags defines and parses the command-line flags. It validates the input directory
@@ -131,6 +182,13 @@ func parseFlags() (*config, error) {
 	flag.StringVar(&cfg.instruction, "instruction", "", "Optional text to prepend to the generated Markdown file.")
 	flag.BoolVar(&cfg.addToClipboard, "clipboard", false, "Copies the generated Markdown to the clipboard.")
 	flag.BoolVar(&cfg.showVersion, "version", false, "Displays the version and exits.")
+
+	redactStr := flag.String("redact", "", "Comma-separated extra regex patterns whose matching files have contents redacted.")
+	flag.BoolVar(&cfg.noDefaultRedact, "no-default-redact", false, "Disables the built-in sensitive-file redaction list.")
+	flag.BoolVar(&cfg.unsafeIncludeSecrets, "unsafe-include-secrets", false, "Embeds ALL file contents including sensitive files. Use with caution.")
+	flag.Int64Var(&cfg.maxFileSizeBytes, "max-file-size", 5_000_000, "Skip file contents larger than this many bytes (0 = no limit).")
+	flag.StringVar(&cfg.rootMarker, "root-marker", ".git,go.mod,package.json,pyproject.toml,Cargo.toml", "Comma-separated filenames/dirnames; walk up from -input until one is found and use that dir as root.")
+	flag.BoolVar(&cfg.here, "here", false, "Skip root-marker detection and use -input (or CWD) as-is.")
 
 	// Override default Usage to print custom help
 	flag.Usage = func() { printHelp(); os.Exit(0) }
@@ -157,20 +215,54 @@ func parseFlags() (*config, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("input path '%s' not a dir", cfg.inputDirAbs)
 	}
+	if !cfg.here && cfg.rootMarker != "" {
+		markers := strings.Split(cfg.rootMarker, ",")
+		if found := findProjectRoot(cfg.inputDirAbs, markers); found != "" {
+			cfg.inputDirAbs = found
+		}
+	}
 	if *ignoreStr != "" {
 		cfg.ignorePatterns = strings.Split(*ignoreStr, ",")
 	}
 	if *includeStr != "" {
 		cfg.includePatterns = strings.Split(*includeStr, ",")
 	}
+	if *redactStr != "" {
+		cfg.redactPatterns = strings.Split(*redactStr, ",")
+	}
 	return cfg, nil
 }
 
+// findProjectRoot walks up from dir until it finds a directory containing one of the
+// marker filenames/dirnames, returning that ancestor directory. Returns "" if not found.
+func findProjectRoot(dir string, markers []string) string {
+	for {
+		for _, marker := range markers {
+			m := strings.TrimSpace(marker)
+			if m == "" {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
+				return dir
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
 // setupLogging initializes the logger and prints the startup configuration.
+// When output is stdout ("-"), logs go to stderr so they don't corrupt the Markdown stream.
 func setupLogging(cfg *config) *log.Logger {
-	logger := log.New(os.Stdout, "", 0)
+	logDest := os.Stdout
+	if cfg.outputFile == "-" {
+		logDest = os.Stderr
+	}
+	logger := log.New(logDest, "", 0)
 	logger.Println("Starting CodeWeaver...")
-	// Use filepath.ToSlash to ensure consistent path separators in logs
 	logger.Println("Input directory:", filepath.ToSlash(cfg.inputDirAbs))
 	logger.Println("Output file:", filepath.ToSlash(cfg.outputFile))
 	if cfg.includedPathsFile != "" {
@@ -233,37 +325,68 @@ func compileRegexList(patterns []string, color, prefix string, logger *log.Logge
 	return compiled, nil
 }
 
+// compileSensitiveMatchers builds the list of regexes used for content redaction.
+// It merges the built-in default list (unless -no-default-redact) with any
+// user-supplied -redact patterns.
+func compileSensitiveMatchers(cfg *config) ([]*regexp.Regexp, error) {
+	if cfg.unsafeIncludeSecrets {
+		return nil, nil
+	}
+	var patterns []string
+	if !cfg.noDefaultRedact {
+		patterns = append(patterns, defaultSensitivePatterns...)
+	}
+	patterns = append(patterns, cfg.redactPatterns...)
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
+			continue
+		}
+		r, err := regexp.Compile(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("sensitive pattern '%s': %w", trimmed, err)
+		}
+		compiled = append(compiled, r)
+	}
+	return compiled, nil
+}
+
+// isSensitive returns true if the relative path matches any sensitive content pattern.
+func isSensitive(pathRelToInput string, sensitiveMatchers []*regexp.Regexp) (bool, string) {
+	for _, pattern := range sensitiveMatchers {
+		if pattern != nil && pattern.MatchString(pathRelToInput) {
+			return true, pattern.String()
+		}
+	}
+	return false, ""
+}
+
 // --- Markdown Generation ---
 
 // generateMarkdown orchestrates the creation of the tree view and content sections.
-// It adopts a two-pass approach:
-//  1. Content Generation: Scans files, applies filters, and builds the content markdown.
-//     This step identifies exactly which files are "included".
-//  2. Tree Generation: Builds the directory tree using ONLY the files identified in step 1.
-//     This ensures that directories which become empty due to filtering are not shown.
-func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers []*regexp.Regexp, logger *log.Logger) (
+func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers, sensitiveMatchers []*regexp.Regexp, logger *log.Logger) (
 	finalMarkdown string, processedPathsForFile []string, excludedPathsForFile []string, err error) {
 
 	var fullMarkdown strings.Builder
 
-	// --- Build Content Section FIRST to get processedPaths ---
 	logger.Println("Processing paths and building content section...")
-	contentBuilder := newContentBuilder(cfg.inputDirAbs, cfg.includedPathsFile, cfg.excludedPathsFile, ignoreMatchers, includeMatchers, logger)
-	// contentMarkdown is the markdown string of file contents
-	// processedPaths contains ALL files that passed shouldProcess (directories are stripped for cleaner tree)
-	// excludedPaths contains all files/dirs that failed shouldProcess
+	contentBuilder := newContentBuilder(
+		cfg.inputDirAbs, cfg.includedPathsFile, cfg.excludedPathsFile,
+		ignoreMatchers, includeMatchers, sensitiveMatchers,
+		cfg.maxFileSizeBytes,
+		logger,
+	)
 	contentMarkdown, processedPaths, excludedPaths, err := contentBuilder.buildContentString()
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to build code content: %w", err)
 	}
 
-	// --- Prepend Instruction if present ---
 	if cfg.instruction != "" {
 		fullMarkdown.WriteString(cfg.instruction)
 		fullMarkdown.WriteString("\n\n")
 	}
 
-	// --- Build Tree View using processedPaths ---
 	logger.Println("Building tree view...")
 	fullMarkdown.WriteString(mdTreeViewHeader)
 	fullMarkdown.WriteString(filepath.ToSlash(cfg.inputDirOriginal) + "\n")
@@ -273,7 +396,7 @@ func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers []*regexp.Reg
 		processedPathsSet[p] = struct{}{}
 	}
 
-	treeBuilder := newTreeBuilder(cfg.inputDirAbs, processedPathsSet) // Modified constructor
+	treeBuilder := newTreeBuilder(cfg.inputDirAbs, processedPathsSet)
 	treeString, err := treeBuilder.buildTreeString()
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("failed to build codebase tree: %w", err)
@@ -281,12 +404,10 @@ func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers []*regexp.Reg
 	fullMarkdown.WriteString(treeString)
 	fullMarkdown.WriteString(mdCodeBlockEnd)
 
-	// Append content string AFTER tree
 	fullMarkdown.WriteString(mdContentHeader)
-	fullMarkdown.WriteString(contentMarkdown) // The content part from contentBuilder
+	fullMarkdown.WriteString(contentMarkdown)
 	logger.Println()
 
-	// processedPaths will be used for the -included-paths-file
 	return fullMarkdown.String(), processedPaths, excludedPaths, nil
 }
 
@@ -295,12 +416,12 @@ func generateMarkdown(cfg *config, ignoreMatchers, includeMatchers []*regexp.Reg
 // treeBuilder is responsible for generating the visual directory tree structure.
 type treeBuilder struct {
 	rootAbsPath       string
-	processedPathsSet map[string]struct{} // Set of paths that passed filters (from contentBuilder)
+	processedPathsSet map[string]struct{}
 	output            strings.Builder
 	depthOpen         map[int]bool
 }
 
-// newTreeBuilder creates a new tree builder instance, taking the set of processed paths to filter the tree.
+// newTreeBuilder creates a new tree builder instance.
 func newTreeBuilder(rootAbsPath string, processedPathsSet map[string]struct{}) *treeBuilder {
 	return &treeBuilder{
 		rootAbsPath:       rootAbsPath,
@@ -331,9 +452,6 @@ func (tb *treeBuilder) printTreeRecursive(currentDirPath string, depth int) erro
 			return relErr
 		}
 
-		// Determine if this entry should be part of the tree:
-		// 1. Itself is in processedPathsSet OR
-		// 2. It's a directory and any processedPath is a descendant of it.
 		shouldDisplay := false
 		if _, isProcessed := tb.processedPathsSet[pathRelToInput]; isProcessed {
 			shouldDisplay = true
@@ -402,13 +520,28 @@ func (tb *treeBuilder) getRelativePath(fullPath string) (string, error) {
 // and formatting it into Markdown.
 type contentBuilder struct {
 	rootAbsPath, includedPathsFile, excludedPathsFile string
-	ignoreMatchers, includeMatchers                   []*regexp.Regexp
+	ignoreMatchers, includeMatchers, sensitiveMatchers []*regexp.Regexp
+	maxFileSizeBytes                                   int64
 	logger                                            *log.Logger
 }
 
 // newContentBuilder initializes a new contentBuilder.
-func newContentBuilder(rootAbsPath, includedPathsFile, excludedPathsFile string, ignoreMatchers, includeMatchers []*regexp.Regexp, logger *log.Logger) *contentBuilder {
-	return &contentBuilder{rootAbsPath, includedPathsFile, excludedPathsFile, ignoreMatchers, includeMatchers, logger}
+func newContentBuilder(
+	rootAbsPath, includedPathsFile, excludedPathsFile string,
+	ignoreMatchers, includeMatchers, sensitiveMatchers []*regexp.Regexp,
+	maxFileSizeBytes int64,
+	logger *log.Logger,
+) *contentBuilder {
+	return &contentBuilder{
+		rootAbsPath:       rootAbsPath,
+		includedPathsFile: includedPathsFile,
+		excludedPathsFile: excludedPathsFile,
+		ignoreMatchers:    ignoreMatchers,
+		includeMatchers:   includeMatchers,
+		sensitiveMatchers: sensitiveMatchers,
+		maxFileSizeBytes:  maxFileSizeBytes,
+		logger:            logger,
+	}
 }
 
 // buildContentString scans the directory and returns:
@@ -419,13 +552,11 @@ func newContentBuilder(rootAbsPath, includedPathsFile, excludedPathsFile string,
 func (cb *contentBuilder) buildContentString() (
 	markdownContent string, allProcessedPaths []string, excludedPaths []string, err error) {
 
-	var contentSB strings.Builder // For actual file content markdown
+	var contentSB strings.Builder
 
-	// Slices to store paths
 	var localProcessedPaths []string
 	var localExcludedPaths []string
 
-	// Maps to store extensions
 	includedExtensions := make(map[string]struct{})
 	excludedExtensions := make(map[string]struct{})
 
@@ -445,15 +576,13 @@ func (cb *contentBuilder) buildContentString() (
 		pathRelToInput = filepath.ToSlash(pathRelToInput)
 		if pathRelToInput == "." {
 			return nil
-		} // Skip root itself from lists
+		}
 
 		if !shouldProcess(pathRelToInput, cb.ignoreMatchers, cb.includeMatchers) {
-			// Log exclusion if not saving to file (to avoid verbose output)
 			if cb.excludedPathsFile == "" {
 				cb.logger.Printf("%s%s %s%s\n", colorRed, logPrefixExclude, pathRelToInput, colorReset)
 			}
 			localExcludedPaths = append(localExcludedPaths, pathRelToInput)
-			// Track extension for excluded file
 			if !d.IsDir() {
 				ext := strings.ToLower(filepath.Ext(pathRelToInput))
 				if ext == "" {
@@ -461,11 +590,29 @@ func (cb *contentBuilder) buildContentString() (
 				}
 				excludedExtensions[ext] = struct{}{}
 			}
-			return nil // Path excluded, continue walk
+			return nil
 		}
 
-		// Log inclusion if not saving to file.
-		// Directories are logged without color to distinguish from files.
+		// S2: Symlink escape guard — prevent reading files whose real path is outside
+		// the input root. WalkDir uses lstat so symlinked dirs aren't traversed, but
+		// symlinked files would be silently read by os.ReadFile.
+		if d.Type()&fs.ModeSymlink != 0 {
+			realPath, symlinkErr := filepath.EvalSymlinks(currentWalkPath)
+			if symlinkErr != nil {
+				cb.logger.Printf("%sWarning: Cannot resolve symlink %s: %v — skipping%s\n",
+					colorYellow, pathRelToInput, symlinkErr, colorReset)
+				localExcludedPaths = append(localExcludedPaths, pathRelToInput)
+				return nil
+			}
+			relReal, relErr := filepath.Rel(cb.rootAbsPath, realPath)
+			if relErr != nil || strings.HasPrefix(filepath.ToSlash(relReal), "..") {
+				cb.logger.Printf("%sWarning: Skipping symlink %s — target escapes root (%s)%s\n",
+					colorYellow, pathRelToInput, realPath, colorReset)
+				localExcludedPaths = append(localExcludedPaths, pathRelToInput)
+				return nil
+			}
+		}
+
 		if cb.includedPathsFile == "" {
 			if d.IsDir() {
 				cb.logger.Printf("%s %s\n", logPrefixInclude, pathRelToInput)
@@ -474,42 +621,55 @@ func (cb *contentBuilder) buildContentString() (
 			}
 		}
 
-		// If it's a directory, don't add to processedPaths.
-		// This effectively removes "empty folders" (or folders with no included files) from the Tree View.
 		if d.IsDir() {
-			return nil // Continue into directory
+			return nil
 		}
 
-		// Path passed filters and is a file, add to processedPaths
 		localProcessedPaths = append(localProcessedPaths, pathRelToInput)
-		// Track extension for included file
 		ext := strings.ToLower(filepath.Ext(pathRelToInput))
 		if ext == "" {
 			ext = "(no ext)"
 		}
 		includedExtensions[ext] = struct{}{}
 
-		// Process file for content inclusion
-		fileContent, readErr := os.ReadFile(currentWalkPath)
-		if readErr != nil {
-			cb.logger.Printf("%sWarning: Failed to read file %s: %v%s\n", colorRed, currentWalkPath, readErr, colorReset)
-			// For error cases, we'll default to standard fencing (3 backticks)
-			contentSB.WriteString(fmt.Sprintf("%s%s\n```\nError reading file: %v\n```\n\n", mdFileHeaderStart, pathRelToInput, readErr))
-			return nil // File processed (passed filters), but content not added
+		// S4: Skip oversized files rather than loading them into memory.
+		if cb.maxFileSizeBytes > 0 {
+			info, infoErr := d.Info()
+			if infoErr == nil && info.Size() > cb.maxFileSizeBytes {
+				cb.logger.Printf("%sSkipping large file %s (%d bytes > -max-file-size %d)%s\n",
+					colorYellow, pathRelToInput, info.Size(), cb.maxFileSizeBytes, colorReset)
+				contentSB.WriteString(fmt.Sprintf("%s%s\n\n[content skipped — file size %d bytes exceeds -max-file-size %d]\n\n",
+					mdFileHeaderStart, pathRelToInput, info.Size(), cb.maxFileSizeBytes))
+				return nil
+			}
 		}
 
-		if len(fileContent) == 0 {
-			// Empty file: it's in localProcessedPaths, but no markdown content for it.
+		// S1: Redact contents of sensitive files. The file still appears in the tree
+		// and included-paths list (already appended above); only its body is suppressed.
+		if sensitive, matchedPattern := isSensitive(pathRelToInput, cb.sensitiveMatchers); sensitive {
+			cb.logger.Printf("%sRedacting sensitive file: %s (matched: %s)%s\n",
+				colorYellow, pathRelToInput, matchedPattern, colorReset)
+			contentSB.WriteString(fmt.Sprintf("%s%s\n\n[content redacted — matched sensitive pattern: %s]\n\n",
+				mdFileHeaderStart, pathRelToInput, matchedPattern))
 			return nil
 		}
 
-		// Check for binary content
+		fileContent, readErr := os.ReadFile(currentWalkPath)
+		if readErr != nil {
+			cb.logger.Printf("%sWarning: Failed to read file %s: %v%s\n", colorRed, currentWalkPath, readErr, colorReset)
+			contentSB.WriteString(fmt.Sprintf("%s%s\n```\nError reading file: %v\n```\n\n", mdFileHeaderStart, pathRelToInput, readErr))
+			return nil
+		}
+
+		if len(fileContent) == 0 {
+			return nil
+		}
+
 		if isBinary(fileContent) {
 			cb.logger.Printf("Skipping binary file content: %s\n", pathRelToInput)
 			return nil
 		}
 
-		// Add file content to markdown with Dynamic Fencing
 		extension := strings.TrimPrefix(strings.ToLower(filepath.Ext(currentWalkPath)), ".")
 		maxBackticks := countMaxBackticks(fileContent)
 		fenceLen := 3
@@ -526,7 +686,6 @@ func (cb *contentBuilder) buildContentString() (
 		return nil
 	})
 
-	// Print Extension Summary
 	if walkErr == nil {
 		cb.logger.Println()
 		printExtensionSummary(includedExtensions, colorGreen, "Included extensions:", cb.logger)
@@ -553,7 +712,6 @@ func printExtensionSummary(extMap map[string]struct{}, color, label string, logg
 }
 
 // isBinary checks if the content contains a null byte in the first 1024 bytes.
-// This is a standard heuristic to detect binary files.
 func isBinary(content []byte) bool {
 	const maxBytesToCheck = 1024
 	checkLen := len(content)
@@ -564,7 +722,6 @@ func isBinary(content []byte) bool {
 }
 
 // countMaxBackticks calculates the maximum number of consecutive backticks in the byte slice.
-// This is used to determine the length of the markdown code block fence.
 func countMaxBackticks(content []byte) int {
 	maxCount := 0
 	currentCount := 0
@@ -607,27 +764,34 @@ func shouldProcess(pathRelToInput string, ignoreMatchers, includeMatchers []*reg
 	return true
 }
 
-// writeOutput writes the generated markdown to the output file, saves included/excluded path lists,
-// and optionally copies the result to the clipboard.
+// writeOutput writes the generated markdown to the output file (or stdout when "-"),
+// saves included/excluded path lists, and optionally copies the result to the clipboard.
 func writeOutput(cfg *config, markdownContent string, includedPaths, excludedPaths []string, logger *log.Logger) error {
-	outputFileSlash := filepath.ToSlash(cfg.outputFile)
-	logger.Printf("Writing output to %s...", outputFileSlash)
-	err := os.WriteFile(cfg.outputFile, []byte(markdownContent), 0644)
-	if err != nil {
-		logger.Printf("%sError writing to output file %s: %v%s", colorRed, outputFileSlash, err, colorReset)
-		return fmt.Errorf("writing output file %s: %w", cfg.outputFile, err)
+	if cfg.outputFile == "-" {
+		if _, err := fmt.Fprint(os.Stdout, markdownContent); err != nil {
+			return fmt.Errorf("writing markdown to stdout: %w", err)
+		}
+	} else {
+		outputFileSlash := filepath.ToSlash(cfg.outputFile)
+		logger.Printf("Writing output to %s...", outputFileSlash)
+		// 0600: aggregate may contain sensitive data; restrict to owner only (S3).
+		err := os.WriteFile(cfg.outputFile, []byte(markdownContent), 0600)
+		if err != nil {
+			logger.Printf("%sError writing to output file %s: %v%s", colorRed, outputFileSlash, err, colorReset)
+			return fmt.Errorf("writing output file %s: %w", cfg.outputFile, err)
+		}
+		logger.Printf("Markdown content written to %s", outputFileSlash)
 	}
-	logger.Printf("Markdown content written to %s", outputFileSlash)
 
 	if cfg.includedPathsFile != "" {
 		includedFileSlash := filepath.ToSlash(cfg.includedPathsFile)
-		if err := savePathsToFile(cfg.includedPathsFile, includedPaths, logger); err != nil { // Pass `includedPaths` from generateMarkdown
+		if err := savePathsToFile(cfg.includedPathsFile, includedPaths, logger); err != nil {
 			logger.Printf("%sWarning: Error saving included paths to %s: %v%s", colorRed, includedFileSlash, err, colorReset)
 		}
 	}
 	if cfg.excludedPathsFile != "" {
 		excludedFileSlash := filepath.ToSlash(cfg.excludedPathsFile)
-		if err := savePathsToFile(cfg.excludedPathsFile, excludedPaths, logger); err != nil { // Pass `excludedPaths` from generateMarkdown
+		if err := savePathsToFile(cfg.excludedPathsFile, excludedPaths, logger); err != nil {
 			logger.Printf("%sWarning: Error saving excluded paths to %s: %v%s", colorRed, excludedFileSlash, err, colorReset)
 		}
 	}
@@ -649,13 +813,14 @@ func savePathsToFile(filename string, paths []string, logger *log.Logger) error 
 		logger.Printf("No paths to save to %s.", filepath.ToSlash(filename))
 		return nil
 	}
-	sort.Strings(paths) // Sort for consistent output
+	sort.Strings(paths)
 	var sb strings.Builder
 	for _, p := range paths {
 		sb.WriteString(p)
 		sb.WriteString("\n")
 	}
-	err := os.WriteFile(filename, []byte(sb.String()), 0644)
+	// 0600: restrict to owner; these files list every path in the scanned tree (S3).
+	err := os.WriteFile(filename, []byte(sb.String()), 0600)
 	if err == nil {
 		logger.Printf("Paths saved to %s", filepath.ToSlash(filename))
 	} else {
@@ -666,28 +831,24 @@ func savePathsToFile(filename string, paths []string, logger *log.Logger) error 
 
 // printHelp displays the application's usage information, available flags, and examples.
 func printHelp() {
-	// Header
 	fmt.Fprintf(os.Stderr, "%s%sCodeWeaver%s: Generate Markdown Documentation from Your Codebase.\n\n", colorBold, colorGreen, colorReset)
 
-	// Usage
 	fmt.Fprintf(os.Stderr, "%sUsage:%s\n", colorCyan, colorReset)
 	fmt.Fprintf(os.Stderr, "  codeweaver [flags]\n\n")
 
-	// Flags
 	fmt.Fprintf(os.Stderr, "%sFlags:%s\n", colorCyan, colorReset)
 	flag.VisitAll(func(f *flag.Flag) {
-		// Format: -flag
-		//         Description (Default: value)
-		// Flag name in Green, Description in default (white/reset)
 		fmt.Fprintf(os.Stderr, "  %s-%-20s%s\n", colorGreen, f.Name, colorReset)
 		fmt.Fprintf(os.Stderr, "      %s", f.Usage)
 
-		// Print default value if not empty
 		if f.DefValue != "" {
-			// Don't print defaults for boolean flags that are false (cleaner output)
 			if f.Name == "clipboard" && f.DefValue == "false" {
 				// skip
 			} else if f.Name == "version" && f.DefValue == "false" {
+				// skip
+			} else if f.Name == "no-default-redact" && f.DefValue == "false" {
+				// skip
+			} else if f.Name == "unsafe-include-secrets" && f.DefValue == "false" {
 				// skip
 			} else {
 				fmt.Fprintf(os.Stderr, " %s(Default: %s)%s", colorYellow, f.DefValue, colorReset)
@@ -697,7 +858,6 @@ func printHelp() {
 	})
 	fmt.Fprintln(os.Stderr)
 
-	// Examples
 	fmt.Fprintf(os.Stderr, "%sExamples:%s\n", colorCyan, colorReset)
 	fmt.Fprintf(os.Stderr, "  %scodeweaver%s\n", colorGreen, colorReset)
 	fmt.Fprintf(os.Stderr, "    Process current directory, output to codebase.md\n\n")
@@ -711,14 +871,24 @@ func printHelp() {
 	fmt.Fprintf(os.Stderr, "  %scodeweaver -instruction \"Analyze this code\" -clipboard%s\n", colorGreen, colorReset)
 	fmt.Fprintf(os.Stderr, "    Prepend instruction and copy result to clipboard\n\n")
 
-	// Filter Logic
+	fmt.Fprintf(os.Stderr, "  %scodeweaver -output -%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Stream Markdown to stdout (logs go to stderr); useful for piping to LLMs\n\n")
+
+	fmt.Fprintf(os.Stderr, "  %scodeweaver -here%s\n", colorGreen, colorReset)
+	fmt.Fprintf(os.Stderr, "    Use CWD as-is, skipping root-marker detection\n\n")
+
+	fmt.Fprintf(os.Stderr, "%sSensitive File Handling:%s\n", colorCyan, colorReset)
+	fmt.Fprintf(os.Stderr, "  By default, files matching common secret patterns (.env, *.pem, id_rsa, etc.)\n")
+	fmt.Fprintf(os.Stderr, "  appear in the tree but have their CONTENTS replaced with a redaction notice.\n")
+	fmt.Fprintf(os.Stderr, "  Use %s-no-default-redact%s to disable built-in patterns.\n", colorLiteRed, colorReset)
+	fmt.Fprintf(os.Stderr, "  Use %s-unsafe-include-secrets%s to embed all contents (use with caution).\n\n", colorLiteRed, colorReset)
+
 	fmt.Fprintf(os.Stderr, "%sHow Filters Work:%s\n", colorCyan, colorReset)
 	fmt.Fprintf(os.Stderr, "  1. %s-ignore%s (Blacklist): Matches are excluded. Checked first.\n", colorLiteRed, colorReset)
 	fmt.Fprintf(os.Stderr, "  2. %s-include%s (Whitelist): If specified, ONLY matches are included.\n", colorGreen, colorReset)
 	fmt.Fprintf(os.Stderr, "     If a path matches both (unlikely given logic), ignore takes precedence.\n")
 	fmt.Fprintf(os.Stderr, "     Directories matching -ignore are skipped entirely.\n\n")
 
-	// Regex Notes
 	fmt.Fprintf(os.Stderr, "%sRegex Notes:%s\n", colorCyan, colorReset)
 	fmt.Fprintf(os.Stderr, "  - Patterns are Go regular expressions.\n")
 	fmt.Fprintf(os.Stderr, "  - Use forward slashes '/' for paths (e.g., \"dir/file.txt\").\n")

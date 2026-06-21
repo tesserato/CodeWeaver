@@ -167,8 +167,15 @@ func runMainLogic(args []string, outputDir string) (string, error) {
 		return logBuf.String(), err
 	}
 
+	sensitiveMatchers, err := compileSensitiveMatchers(cfg)
+	if err != nil {
+		err = fmt.Errorf("Error compiling sensitive patterns: %w", err)
+		testRunLogger.Println(colorRed + err.Error() + colorReset)
+		return logBuf.String(), err
+	}
+
 	// Call the refactored generateMarkdown
-	finalMarkdownString, pathsForIncludedFile, pathsForExcludedFile, err := generateMarkdown(cfg, ignoreMatchers, includeMatchers, testRunLogger)
+	finalMarkdownString, pathsForIncludedFile, pathsForExcludedFile, err := generateMarkdown(cfg, ignoreMatchers, includeMatchers, sensitiveMatchers, testRunLogger)
 	if err != nil {
 		err = fmt.Errorf("Error generating markdown: %w", err)
 		testRunLogger.Println(colorRed + err.Error() + colorReset)
@@ -593,7 +600,7 @@ func TestContentBuilder(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			builder := newContentBuilder(rootDir, "", "", tc.ignoreMatchers, tc.includeMatchers, testLogger)
+			builder := newContentBuilder(rootDir, "", "", tc.ignoreMatchers, tc.includeMatchers, nil, 0, testLogger)
 			actualContentStr, actualProcessedPaths, actualExcludedPaths, err := builder.buildContentString()
 			if err != nil {
 				t.Fatalf("buildContentString() failed: %v", err)
@@ -875,4 +882,242 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// --- Security Tests ---
+
+// TestSensitiveContentRedaction verifies that files matching the built-in sensitive
+// patterns appear in the tree / processed-paths list but have their contents replaced
+// with a redaction placeholder in the markdown output.
+func TestSensitiveContentRedaction(t *testing.T) {
+	rootDir := t.TempDir()
+	files := map[string]string{
+		".env":           "SECRET_KEY=supersecret",
+		"config.go":      "package main",
+		"deploy/id_rsa":  "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAK...",
+		"infra/prod.pem": "-----BEGIN CERTIFICATE-----\nMIID...",
+	}
+	for relPath, content := range files {
+		abs := filepath.Join(rootDir, relPath)
+		if err := os.MkdirAll(filepath.Dir(abs), 0755); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(abs), err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0644); err != nil {
+			t.Fatalf("write %s: %v", abs, err)
+		}
+	}
+
+	testLogger := log.New(io.Discard, "", 0)
+	sensitiveMatchers, err := compileSensitiveMatchers(&config{})
+	if err != nil {
+		t.Fatalf("compileSensitiveMatchers: %v", err)
+	}
+
+	builder := newContentBuilder(rootDir, "", "", nil, nil, sensitiveMatchers, 0, testLogger)
+	content, processedPaths, _, err := builder.buildContentString()
+	if err != nil {
+		t.Fatalf("buildContentString: %v", err)
+	}
+	content = normalizeNewlines(content)
+
+	// Sensitive files must be in the processed-paths list (visible in tree).
+	for _, sensitiveRel := range []string{".env", "deploy/id_rsa", "infra/prod.pem"} {
+		found := false
+		for _, p := range processedPaths {
+			if p == sensitiveRel {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("sensitive file %q missing from processedPaths — it should appear in the tree", sensitiveRel)
+		}
+	}
+
+	// Actual secret content must NOT appear in the markdown.
+	secretStrings := []string{"supersecret", "BEGIN RSA PRIVATE KEY", "BEGIN CERTIFICATE"}
+	for _, secret := range secretStrings {
+		if strings.Contains(content, secret) {
+			t.Errorf("secret string %q found in markdown output — redaction failed", secret)
+		}
+	}
+
+	// Redaction placeholder must be present.
+	if !strings.Contains(content, "[content redacted") {
+		t.Errorf("expected redaction placeholder in content, got none")
+	}
+
+	// Normal file content must still be included.
+	if !strings.Contains(content, "package main") {
+		t.Errorf("non-sensitive file content missing from output")
+	}
+}
+
+// TestSensitiveRedactionOptOut verifies -unsafe-include-secrets embeds all contents.
+func TestSensitiveRedactionOptOut(t *testing.T) {
+	rootDir := t.TempDir()
+	envFile := filepath.Join(rootDir, ".env")
+	if err := os.WriteFile(envFile, []byte("SECRET=value"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	testLogger := log.New(io.Discard, "", 0)
+	// unsafeIncludeSecrets=true → compileSensitiveMatchers returns nil
+	sensitiveMatchers, err := compileSensitiveMatchers(&config{unsafeIncludeSecrets: true})
+	if err != nil {
+		t.Fatalf("compileSensitiveMatchers: %v", err)
+	}
+	if len(sensitiveMatchers) != 0 {
+		t.Errorf("expected 0 sensitive matchers with -unsafe-include-secrets, got %d", len(sensitiveMatchers))
+	}
+
+	builder := newContentBuilder(rootDir, "", "", nil, nil, nil, 0, testLogger)
+	content, _, _, err := builder.buildContentString()
+	if err != nil {
+		t.Fatalf("buildContentString: %v", err)
+	}
+	if !strings.Contains(content, "SECRET=value") {
+		t.Errorf("with -unsafe-include-secrets, .env contents should be embedded")
+	}
+}
+
+// TestSymlinkEscapeGuard verifies that a symlink pointing outside the root is skipped.
+func TestSymlinkEscapeGuard(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks require elevated privileges on Windows")
+	}
+
+	// Target file that lives outside the scanned root.
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "outside_secret.txt")
+	if err := os.WriteFile(outsideFile, []byte("outside secret content"), 0644); err != nil {
+		t.Fatalf("write outside file: %v", err)
+	}
+
+	rootDir := t.TempDir()
+	// Normal file inside root.
+	if err := os.WriteFile(filepath.Join(rootDir, "normal.txt"), []byte("normal content"), 0644); err != nil {
+		t.Fatalf("write normal: %v", err)
+	}
+	// Symlink inside root pointing to a file outside root.
+	symlinkPath := filepath.Join(rootDir, "escape_link.txt")
+	if err := os.Symlink(outsideFile, symlinkPath); err != nil {
+		t.Fatalf("create symlink: %v", err)
+	}
+
+	testLogger := log.New(io.Discard, "", 0)
+	builder := newContentBuilder(rootDir, "", "", nil, nil, nil, 0, testLogger)
+	content, _, excludedPaths, err := builder.buildContentString()
+	if err != nil {
+		t.Fatalf("buildContentString: %v", err)
+	}
+	content = normalizeNewlines(content)
+
+	// Symlink target content must NOT appear.
+	if strings.Contains(content, "outside secret content") {
+		t.Errorf("symlink escape: outside file content leaked into output")
+	}
+
+	// The symlink itself should be in excludedPaths.
+	found := false
+	for _, p := range excludedPaths {
+		if p == "escape_link.txt" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("escape symlink not found in excludedPaths; got: %v", excludedPaths)
+	}
+
+	// Normal file is unaffected.
+	if !strings.Contains(content, "normal content") {
+		t.Errorf("normal file content missing after symlink guard")
+	}
+}
+
+// TestOutputFilePermissions verifies that output files are written with mode 0600.
+func TestOutputFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file permission bits not enforced on Windows")
+	}
+	rootDir, cleanup := createTestFS(t)
+	defer cleanup()
+
+	testOutputDir := t.TempDir()
+	outputFile := "perms_test.md"
+	includedFile := "inc_perms.txt"
+	excludedFile := "exc_perms.txt"
+
+	args := []string{
+		"-input", rootDir,
+		"-output", outputFile,
+		"-included-paths-file", includedFile,
+		"-excluded-paths-file", excludedFile,
+	}
+	_, err := runMainLogic(args, testOutputDir)
+	if err != nil {
+		t.Fatalf("runMainLogic: %v", err)
+	}
+
+	for _, name := range []string{outputFile, includedFile, excludedFile} {
+		path := filepath.Join(testOutputDir, name)
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			t.Fatalf("stat %s: %v", name, statErr)
+		}
+		mode := info.Mode().Perm()
+		if mode != 0600 {
+			t.Errorf("%s: expected permissions 0600, got %04o", name, mode)
+		}
+	}
+}
+
+// TestMaxFileSizeLimit verifies that files exceeding -max-file-size get a skip
+// placeholder in the output but still appear in the processed-paths list.
+func TestMaxFileSizeLimit(t *testing.T) {
+	rootDir := t.TempDir()
+	// Small file — should be included normally.
+	if err := os.WriteFile(filepath.Join(rootDir, "small.txt"), []byte("tiny"), 0644); err != nil {
+		t.Fatalf("write small: %v", err)
+	}
+	// Large file — 100 bytes, limit set to 10.
+	if err := os.WriteFile(filepath.Join(rootDir, "large.txt"), []byte(strings.Repeat("x", 100)), 0644); err != nil {
+		t.Fatalf("write large: %v", err)
+	}
+
+	testLogger := log.New(io.Discard, "", 0)
+	builder := newContentBuilder(rootDir, "", "", nil, nil, nil, 10, testLogger)
+	content, processedPaths, _, err := builder.buildContentString()
+	if err != nil {
+		t.Fatalf("buildContentString: %v", err)
+	}
+	content = normalizeNewlines(content)
+
+	// large.txt must still be in the tree (processedPaths).
+	foundLarge := false
+	for _, p := range processedPaths {
+		if p == "large.txt" {
+			foundLarge = true
+			break
+		}
+	}
+	if !foundLarge {
+		t.Errorf("large.txt missing from processedPaths; should appear in tree")
+	}
+
+	// Placeholder must be in the output.
+	if !strings.Contains(content, "[content skipped") {
+		t.Errorf("expected size-skip placeholder in content")
+	}
+
+	// Raw content of large file must not appear.
+	if strings.Contains(content, strings.Repeat("x", 100)) {
+		t.Errorf("large file raw content leaked despite size limit")
+	}
+
+	// Small file unaffected.
+	if !strings.Contains(content, "tiny") {
+		t.Errorf("small file content missing")
+	}
 }
